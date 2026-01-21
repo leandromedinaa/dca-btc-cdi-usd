@@ -13,6 +13,12 @@ BRAND_NAME = "LM Analytics"
 TAGLINE = "Research & simulações de investimento • Web3 • Dados reais"
 LOGO_PATH = "assets/logo.svg"
 
+# =========================
+# SOCIAL LINKS
+# =========================
+INSTAGRAM_URL = "https://www.instagram.com/mikesp18/"
+LINKEDIN_URL = "https://www.linkedin.com/in/leandro-medina-770a64386/"
+
 # Professional colors
 COL_BTC = "#F7931A"   # Bitcoin orange
 COL_USD = "#00C853"   # Green
@@ -43,6 +49,14 @@ with colB:
         <div style="line-height:1.15">
           <h1 style="margin-bottom:0;">{BRAND_NAME}</h1>
           <p style="margin-top:6px; color:#8A8F98;">{TAGLINE}</p>
+          <div style="margin-top:6px;">
+            <a href="{INSTAGRAM_URL}" target="_blank" style="margin-right:16px; color:#8A8F98; text-decoration:none;">
+              📸 Instagram
+            </a>
+            <a href="{LINKEDIN_URL}" target="_blank" style="color:#8A8F98; text-decoration:none;">
+              💼 LinkedIn
+            </a>
+          </div>
         </div>
         """,
         unsafe_allow_html=True,
@@ -101,6 +115,20 @@ with st.sidebar:
     st.divider()
     st.caption("© LM Analytics — Leandro Medina")
     st.caption("Dados: Yahoo Finance • Banco Central do Brasil (SGS)")
+
+    st.markdown(
+        f"""
+        <div style="margin-top:10px; line-height:1.6;">
+            <a href="{INSTAGRAM_URL}" target="_blank" style="text-decoration:none;">
+                📸 Instagram
+            </a><br>
+            <a href="{LINKEDIN_URL}" target="_blank" style="text-decoration:none;">
+                💼 LinkedIn
+            </a>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
 
 # =========================
 # FUNÇÕES (CACHE / DADOS)
@@ -165,7 +193,6 @@ def simular_dca(precos: pd.Series, aporte_mensal: float) -> pd.Series:
     valores = []
     for p in precos:
         if p <= 0 or aporte_mensal <= 0:
-            # Sem aporte ou preço inválido
             valores.append(cotas * p)
             continue
         cotas += aporte_mensal / p
@@ -183,6 +210,7 @@ def calc_dca(df_m: pd.DataFrame, aporte_mensal: float) -> pd.DataFrame:
 
 def resumo_dca(df_dca: pd.DataFrame, aporte_mensal: float) -> pd.DataFrame:
     total = float(aporte_mensal) * len(df_dca.index)
+
     def ret(v):
         return (v / total - 1) * 100 if total > 0 else 0.0
 
@@ -306,9 +334,15 @@ try:
         # Gráfico principal maior + melhor qualidade
         fig, ax = plt.subplots(figsize=(16, 7), dpi=130)
 
-        ax.plot(df_dca_plot.index, df_dca_plot["BTC"], label=f"Bitcoin (DCA R${aporte:,.0f}/mês)", color=COL_BTC, linewidth=2.4)
-        ax.plot(df_dca_plot.index, df_dca_plot["USD"], label=f"Dólar (DCA R${aporte:,.0f}/mês)", color=COL_USD, linewidth=2.2)
-        ax.plot(df_dca_plot.index, df_dca_plot["CDI"], label=f"CDI (DCA R${aporte:,.0f}/mês)", color=COL_CDI, linewidth=2.2)
+        ax.plot(df_dca_plot.index, df_dca_plot["BTC"],
+                label=f"Bitcoin (DCA R${aporte:,.0f}/mês)",
+                color=COL_BTC, linewidth=2.4)
+        ax.plot(df_dca_plot.index, df_dca_plot["USD"],
+                label=f"Dólar (DCA R${aporte:,.0f}/mês)",
+                color=COL_USD, linewidth=2.2)
+        ax.plot(df_dca_plot.index, df_dca_plot["CDI"],
+                label=f"CDI (DCA R${aporte:,.0f}/mês)",
+                color=COL_CDI, linewidth=2.2)
 
         ax.set_title(f"DCA Mensal — BTC vs CDI vs USD ({anos_plot} anos)", pad=14)
         ax.set_xlabel("Data")
@@ -317,7 +351,6 @@ try:
         ax.legend(loc="upper left")
         fig.tight_layout()
 
-        # use_container_width aumenta bastante no Streamlit
         st.pyplot(fig, use_container_width=True)
 
         # PDF do gráfico principal
