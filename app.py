@@ -8,7 +8,9 @@ import streamlit as st
 
 st.set_page_config(page_title="LM Analytics — DCA BTC x CDI x USD",
     page_icon="assets/logo.svg",
-    layout="wide", # ====== BRAND HEADER ======
+    
+)
+layout="wide", # ====== BRAND HEADER ======
 colA, colB = st.columns([1, 7], vertical_alignment="center")
 
 with colA:
@@ -30,7 +32,6 @@ with colB:
     )
 
 st.divider()
-)
 
 # =========================
 # SIDEBAR (CONTROLES)
