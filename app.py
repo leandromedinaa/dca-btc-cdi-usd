@@ -32,7 +32,7 @@ MUTED = "#8A8F98"
 # SVG ICONS (FUTURISTIC)
 # =========================
 SVG_IG = f"""
-<svg width="18" height="18" viewBox="0 0 24 24" fill="none"
+<svg width="25" height="25" viewBox="0 0 24 24" fill="none"
      xmlns="http://www.w3.org/2000/svg">
   <path d="M7.5 2.5h9A5 5 0 0 1 21.5 7.5v9a5 5 0 0 1-5 5h-9a5 5 0 0 1-5-5v-9a5 5 0 0 1 5-5Z"
         stroke="{NEON_CYAN}" stroke-width="1.7"/>
