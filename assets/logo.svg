@@ -1,24 +1,121 @@
-<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+<svg xmlns="http://www.w3.org/2000/svg" width="820" height="220" viewBox="0 0 820 220">
+  <defs>
+    <!-- Neon gradients -->
+    <linearGradient id="gStroke" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#00E5FF"></stop>
+      <stop offset="100%" stop-color="#7C4DFF"></stop>
+    </linearGradient>
 
-  <!-- Background -->
-  <rect width="512" height="512" rx="96" fill="#0E1117"></rect>
+    <linearGradient id="gLine" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#00E5FF"></stop>
+      <stop offset="100%" stop-color="#7C4DFF"></stop>
+    </linearGradient>
 
-  <!-- Hexagon -->
-  <polygon points="256,80 392,160 392,320 256,400 120,320 120,160" stroke="#00E5FF" stroke-width="16" fill="none"></polygon>
+    <!-- Glow filters -->
+    <filter id="glowCyan" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="3" result="b"></feGaussianBlur>
+      <feColorMatrix in="b" type="matrix" values="0 0 0 0 0
+                0 0 0 0 0.898
+                0 0 0 0 1
+                0 0 0 0.55 0" result="c"></feColorMatrix>
+      <feMerge>
+        <feMergeNode in="c"></feMergeNode>
+        <feMergeNode in="SourceGraphic"></feMergeNode>
+      </feMerge>
+    </filter>
 
-  <!-- Chart line -->
-  <polyline points="160,300 210,250 260,280 310,210 350,190" stroke="#7C4DFF" stroke-width="12" fill="none" stroke-linecap="round" stroke-linejoin="round"></polyline>
+    <filter id="glowPurple" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="3" result="b"></feGaussianBlur>
+      <feColorMatrix in="b" type="matrix" values="0 0 0 0 0.486
+                0 0 0 0 0.302
+                0 0 0 0 1
+                0 0 0 0.45 0" result="p"></feColorMatrix>
+      <feMerge>
+        <feMergeNode in="p"></feMergeNode>
+        <feMergeNode in="SourceGraphic"></feMergeNode>
+      </feMerge>
+    </filter>
 
-  <!-- Dots -->
-  <circle cx="160" cy="300" r="6" fill="#00E5FF"></circle>
-  <circle cx="210" cy="250" r="6" fill="#00E5FF"></circle>
-  <circle cx="260" cy="280" r="6" fill="#00E5FF"></circle>
-  <circle cx="310" cy="210" r="6" fill="#00E5FF"></circle>
-  <circle cx="350" cy="190" r="6" fill="#00E5FF"></circle>
+    <filter id="softGlow" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="6" result="b"></feGaussianBlur>
+      <feColorMatrix in="b" type="matrix" values="0 0 0 0 0.2
+                0 0 0 0 0.85
+                0 0 0 0 1
+                0 0 0 0.25 0" result="c"></feColorMatrix>
+      <feMerge>
+        <feMergeNode in="c"></feMergeNode>
+        <feMergeNode in="SourceGraphic"></feMergeNode>
+      </feMerge>
+    </filter>
 
-  <!-- Text -->
-  <text x="256" y="455" text-anchor="middle" fill="#E6E6E6" font-size="40" font-family="Arial, Helvetica, sans-serif" letter-spacing="2">
-    LM
-  </text>
+    <!-- Slight inner shadow for “glass” -->
+    <filter id="glass" x="-30%" y="-30%" width="160%" height="160%">
+      <feOffset dx="0" dy="1" result="off"></feOffset>
+      <feGaussianBlur in="off" stdDeviation="1.5" result="blur"></feGaussianBlur>
+      <feColorMatrix in="blur" type="matrix" values="0 0 0 0 0
+                0 0 0 0 0
+                0 0 0 0 0
+                0 0 0 0.25 0" result="shadow"></feColorMatrix>
+      <feMerge>
+        <feMergeNode in="shadow"></feMergeNode>
+        <feMergeNode in="SourceGraphic"></feMergeNode>
+      </feMerge>
+    </filter>
+  </defs>
 
+  <!-- Transparent background (works on dark UI) -->
+  <rect width="100%" height="100%" fill="transparent"></rect>
+
+  <!-- ICON (hex + chart) -->
+  <g transform="translate(60,20)">
+    <!-- subtle glow backdrop -->
+    <circle cx="90" cy="90" r="74" fill="url(#gStroke)" opacity="0.10" filter="url(#softGlow)"></circle>
+
+    <!-- Hexagon -->
+    <path d="M90 18
+         L150 52
+         L150 128
+         L90 162
+         L30 128
+         L30 52
+         Z" fill="rgba(0,229,255,0.04)" stroke="url(#gStroke)" stroke-width="3.5" filter="url(#glowCyan)"></path>
+
+    <!-- Inner hex stroke (detail) -->
+    <path d="M90 30
+         L139 58
+         L139 122
+         L90 150
+         L41 122
+         L41 58
+         Z" fill="none" stroke="rgba(124,77,255,0.35)" stroke-width="1.5" filter="url(#glowPurple)"></path>
+
+    <!-- Chart line -->
+    <path d="M52 112
+         L74 96
+         L96 106
+         L120 78
+         L132 66" fill="none" stroke="url(#gLine)" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round" filter="url(#glowPurple)"></path>
+
+    <!-- Nodes -->
+    <circle cx="52" cy="112" r="4.2" fill="#00E5FF" filter="url(#glowCyan)"></circle>
+    <circle cx="74" cy="96" r="4.2" fill="#00E5FF" filter="url(#glowCyan)"></circle>
+    <circle cx="96" cy="106" r="4.2" fill="#00E5FF" filter="url(#glowCyan)"></circle>
+    <circle cx="120" cy="78" r="4.2" fill="#7C4DFF" filter="url(#glowPurple)"></circle>
+    <circle cx="132" cy="66" r="4.2" fill="#7C4DFF" filter="url(#glowPurple)"></circle>
+
+    <!-- Tiny LM tag -->
+    <text x="90" y="148" text-anchor="middle" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" letter-spacing="1.5" fill="#E6E6E6" opacity="0.85" filter="url(#glass)">LM</text>
+  </g>
+
+  <!-- WORDMARK -->
+  <g transform="translate(240,70)">
+    <!-- LM -->
+    <text x="0" y="40" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="58" font-weight="700" letter-spacing="2" fill="#E6E6E6" filter="url(#glass)">LM</text>
+
+    <!-- Analytics -->
+    <text x="0" y="98" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="56" font-weight="700" letter-spacing="3" fill="#00E5FF" filter="url(#glowCyan)">ANALYTICS</text>
+
+    <!-- small underline accent -->
+    <path d="M2 112 L270 112" stroke="rgba(124,77,255,0.45)" stroke-width="3" stroke-linecap="round" filter="url(#glowPurple)"></path>
+  </g>
 </svg>
