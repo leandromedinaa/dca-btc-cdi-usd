@@ -6,26 +6,43 @@ import yfinance as yf
 import requests
 import streamlit as st
 
-st.set_page_config(page_title="LM Analytics — DCA BTC x CDI x USD",
-    page_icon="assets/logo.svg",
-    
-)
-layout="wide", # ====== BRAND HEADER ======
-colA, colB = st.columns([1, 7], vertical_alignment="center")
+# =========================
+# BRAND / THEME
+# =========================
+BRAND_NAME = "LM Analytics"
+TAGLINE = "Research & simulações de investimento • Web3 • Dados reais"
+LOGO_PATH = "assets/logo.svg"
 
+# Professional colors
+COL_BTC = "#F7931A"   # Bitcoin orange
+COL_USD = "#00C853"   # Green
+COL_CDI = "#2979FF"   # Institutional blue
+
+# =========================
+# PAGE CONFIG
+# =========================
+st.set_page_config(
+    page_title=f"{BRAND_NAME} — DCA BTC x CDI x USD",
+    page_icon=LOGO_PATH,
+    layout="wide",
+)
+
+# =========================
+# HEADER (BRANDING)
+# =========================
+colA, colB = st.columns([1, 7], vertical_alignment="center")
 with colA:
-    st.image("assets/logo.svg", width=90)
+    try:
+        st.image(LOGO_PATH, width=90)
+    except Exception:
+        st.write("")
 
 with colB:
     st.markdown(
-        """
+        f"""
         <div style="line-height:1.15">
-          <h1 style="margin-bottom:0;">
-            LM Analytics
-          </h1>
-          <p style="margin-top:6px; color:#8A8F98;">
-            Research & simulações de investimento • Web3 • Dados reais
-          </p>
+          <h1 style="margin-bottom:0;">{BRAND_NAME}</h1>
+          <p style="margin-top:6px; color:#8A8F98;">{TAGLINE}</p>
         </div>
         """,
         unsafe_allow_html=True,
@@ -81,10 +98,14 @@ with st.sidebar:
     refresh_seconds = st.number_input("Intervalo (segundos)", 10, 3600, 60, 10)
     atualizar_agora = st.button("🔄 Atualizar agora")
 
+    st.divider()
+    st.caption("© LM Analytics — Leandro Medina")
+    st.caption("Dados: Yahoo Finance • Banco Central do Brasil (SGS)")
+
 # =========================
 # FUNÇÕES (CACHE / DADOS)
 # =========================
-@st.cache_data(ttl=60 * 60)  # 1h (Yahoo)
+@st.cache_data(ttl=60 * 60)  # 1h
 def baixar_btc_usd(anos: int) -> pd.DataFrame:
     df = yf.download(
         "BTC-USD",
@@ -93,9 +114,10 @@ def baixar_btc_usd(anos: int) -> pd.DataFrame:
         auto_adjust=True,
         progress=False,
     )
-    if df.empty:
+    if df is None or df.empty:
         raise RuntimeError("Falha ao baixar BTC-USD do Yahoo Finance.")
 
+    # yfinance às vezes traz colunas multiindex
     if isinstance(df.columns, pd.MultiIndex):
         df.columns = df.columns.get_level_values(0)
 
@@ -104,7 +126,7 @@ def baixar_btc_usd(anos: int) -> pd.DataFrame:
     return df
 
 
-@st.cache_data(ttl=24 * 60 * 60)  # 24h (BCB)
+@st.cache_data(ttl=24 * 60 * 60)  # 24h
 def baixar_usd_brl(data_inicial: str, data_final: str) -> pd.DataFrame:
     url = "https://api.bcb.gov.br/dados/serie/bcdata.sgs.1/dados"
     params = {"formato": "json", "dataInicial": data_inicial, "dataFinal": data_final}
@@ -120,7 +142,7 @@ def baixar_usd_brl(data_inicial: str, data_final: str) -> pd.DataFrame:
     return df.set_index("data")[["USD_BRL"]]
 
 
-@st.cache_data(ttl=24 * 60 * 60)  # 24h (BCB)
+@st.cache_data(ttl=24 * 60 * 60)  # 24h
 def baixar_cdi(data_inicial: str, data_final: str) -> pd.DataFrame:
     url = "https://api.bcb.gov.br/dados/serie/bcdata.sgs.12/dados"
     params = {"formato": "json", "dataInicial": data_inicial, "dataFinal": data_final}
@@ -132,9 +154,9 @@ def baixar_cdi(data_inicial: str, data_final: str) -> pd.DataFrame:
         raise RuntimeError("Falha ao baixar CDI (SGS 12).")
 
     df["data"] = pd.to_datetime(df["data"], dayfirst=True)
-    df["cdi_pct"] = df["valor"].astype(float) / 100
+    df["cdi_pct"] = df["valor"].astype(float) / 100.0  # taxa diária
     df = df.set_index("data")[["cdi_pct"]]
-    df["CDI"] = (1 + df["cdi_pct"]).cumprod()
+    df["CDI"] = (1 + df["cdi_pct"]).cumprod()  # índice acumulado
     return df[["CDI"]]
 
 
@@ -142,6 +164,10 @@ def simular_dca(precos: pd.Series, aporte_mensal: float) -> pd.Series:
     cotas = 0.0
     valores = []
     for p in precos:
+        if p <= 0 or aporte_mensal <= 0:
+            # Sem aporte ou preço inválido
+            valores.append(cotas * p)
+            continue
         cotas += aporte_mensal / p
         valores.append(cotas * p)
     return pd.Series(valores, index=precos.index)
@@ -157,15 +183,14 @@ def calc_dca(df_m: pd.DataFrame, aporte_mensal: float) -> pd.DataFrame:
 
 def resumo_dca(df_dca: pd.DataFrame, aporte_mensal: float) -> pd.DataFrame:
     total = float(aporte_mensal) * len(df_dca.index)
+    def ret(v):
+        return (v / total - 1) * 100 if total > 0 else 0.0
+
     res = pd.DataFrame(
         {
             "Total Aportado (R$)": [total, total, total],
             "Valor Final (R$)": [df_dca["BTC"].iloc[-1], df_dca["USD"].iloc[-1], df_dca["CDI"].iloc[-1]],
-            "Retorno (%)": [
-                (df_dca["BTC"].iloc[-1] / total - 1) * 100 if total > 0 else 0.0,
-                (df_dca["USD"].iloc[-1] / total - 1) * 100 if total > 0 else 0.0,
-                (df_dca["CDI"].iloc[-1] / total - 1) * 100 if total > 0 else 0.0,
-            ],
+            "Retorno (%)": [ret(df_dca["BTC"].iloc[-1]), ret(df_dca["USD"].iloc[-1]), ret(df_dca["CDI"].iloc[-1])],
         },
         index=["BTC", "USD", "CDI"],
     )
@@ -187,8 +212,8 @@ if auto_refresh:
 # PIPELINE PRINCIPAL
 # =========================
 try:
-    anos_max = 10  # sempre baixa 10 anos
-    df_btc_usd = baixar_btc_usd(anosshos_max:=anos_max)
+    # Sempre baixa 10 anos (para permitir sensibilidade maior), mas o gráfico usa o slider
+    df_btc_usd = baixar_btc_usd(10)
 
     data_ini = df_btc_usd.index.min().strftime("%d/%m/%Y")
     data_fim = df_btc_usd.index.max().strftime("%d/%m/%Y")
@@ -196,13 +221,14 @@ try:
     df_usd = baixar_usd_brl(data_ini, data_fim)
     df_cdi = baixar_cdi(data_ini, data_fim)
 
+    # Join diário
     df_all = df_btc_usd.join(df_usd, how="inner").join(df_cdi, how="inner")
     df_all["BTC_BRL"] = df_all["BTC_USD"] * df_all["USD_BRL"]
     df_all = df_all[["BTC_BRL", "USD_BRL", "CDI"]].dropna()
 
-    # mensal fim do mês
+    # Mensal (fim do mês)
     df_m_full = df_all.resample("ME").last().dropna()
-    if len(df_m_full) < 6:
+    if len(df_m_full) < 12:
         st.error("Base mensal muito curta. Não há dados suficientes para simular DCA.")
         st.stop()
 
@@ -211,6 +237,7 @@ try:
     # =========================
     meses_plot = min(anos_plot * 12, len(df_m_full))
     df_m_plot = df_m_full.tail(meses_plot)
+
     df_dca_plot = calc_dca(df_m_plot, aporte)
     resultado_plot = resumo_dca(df_dca_plot, aporte)
 
@@ -233,7 +260,7 @@ try:
         df_base_sens = df_base_sens.loc[:fim].copy()
 
     # =========================
-    # Sensibilidade (mutável) — só calcula horizontes que cabem
+    # Sensibilidade (mutável)
     # =========================
     sens_rows = []
     anos_invalidos = []
@@ -273,19 +300,25 @@ try:
     # =========================
     # LAYOUT
     # =========================
-    col1, col2 = st.columns([2, 1], gap="large")
+    col1, col2 = st.columns([3, 1.2], gap="large")
 
     with col1:
-        fig, ax = plt.subplots(figsize=(12, 6))
-        ax.plot(df_dca_plot.index, df_dca_plot["BTC"], label=f"Bitcoin (DCA R${aporte:,.0f}/mês)")
-        ax.plot(df_dca_plot.index, df_dca_plot["USD"], label=f"Dólar (DCA R${aporte:,.0f}/mês)")
-        ax.plot(df_dca_plot.index, df_dca_plot["CDI"], label=f"CDI (DCA R${aporte:,.0f}/mês)")
-        ax.set_title(f"DCA Mensal — BTC vs CDI vs USD ({anos_plot} anos)")
+        # Gráfico principal maior + melhor qualidade
+        fig, ax = plt.subplots(figsize=(16, 7), dpi=130)
+
+        ax.plot(df_dca_plot.index, df_dca_plot["BTC"], label=f"Bitcoin (DCA R${aporte:,.0f}/mês)", color=COL_BTC, linewidth=2.4)
+        ax.plot(df_dca_plot.index, df_dca_plot["USD"], label=f"Dólar (DCA R${aporte:,.0f}/mês)", color=COL_USD, linewidth=2.2)
+        ax.plot(df_dca_plot.index, df_dca_plot["CDI"], label=f"CDI (DCA R${aporte:,.0f}/mês)", color=COL_CDI, linewidth=2.2)
+
+        ax.set_title(f"DCA Mensal — BTC vs CDI vs USD ({anos_plot} anos)", pad=14)
         ax.set_xlabel("Data")
         ax.set_ylabel("Patrimônio acumulado (R$)")
-        ax.grid(True)
-        ax.legend()
-        st.pyplot(fig)
+        ax.grid(True, alpha=0.25)
+        ax.legend(loc="upper left")
+        fig.tight_layout()
+
+        # use_container_width aumenta bastante no Streamlit
+        st.pyplot(fig, use_container_width=True)
 
         # PDF do gráfico principal
         pdf_buffer = io.BytesIO()
@@ -299,7 +332,7 @@ try:
         )
 
     with col2:
-        st.subheader("Resumo (período selecionado)")
+        st.subheader("Resumo\n(período selecionado)")
         total_aportado = float(aporte) * len(df_m_plot)
 
         st.metric("Total aportado", f"R$ {total_aportado:,.2f}")
@@ -318,17 +351,15 @@ try:
     st.divider()
     st.subheader("Sensibilidade do período (DCA mensal) — Retorno (%) por horizonte")
 
-    # Avisos de horizonte que não cabe
     if anos_invalidos:
         st.warning(
-            f"Alguns horizontes foram ignorados por falta de meses na base escolhida: {anos_invalidos}. "
+            f"Horizontes ignorados por falta de meses na base escolhida: {anos_invalidos}. "
             f"Dica: aumente 'Base da sensibilidade' para 'Histórico (10 anos)' ou reduza o horizonte."
         )
 
-    # Tabela + gráfico só se houver dados
     if df_sens.empty:
         st.error(
-            "Não há dados suficientes para calcular a sensibilidade com os parâmetros atuais. "
+            "Sem dados suficientes para calcular a sensibilidade com os parâmetros atuais. "
             "Reduza o horizonte (anos) ou aumente a base da sensibilidade."
         )
         st.stop()
@@ -352,20 +383,19 @@ try:
         use_container_width=True,
     )
 
-    fig2, ax2 = plt.subplots(figsize=(12, 5))
-    ax2.plot(df_sens.index, df_sens["Retorno BTC (%)"], label="BTC")
-    ax2.plot(df_sens.index, df_sens["Retorno USD (%)"], label="USD")
-    ax2.plot(df_sens.index, df_sens["Retorno CDI (%)"], label="CDI")
-    ax2.set_title(f"Retorno (%) do DCA por horizonte ({df_sens.index.min()}–{df_sens.index.max()} anos)")
+    fig2, ax2 = plt.subplots(figsize=(16, 5.2), dpi=130)
+    ax2.plot(df_sens.index, df_sens["Retorno BTC (%)"], label="BTC", color=COL_BTC, linewidth=2.4)
+    ax2.plot(df_sens.index, df_sens["Retorno USD (%)"], label="USD", color=COL_USD, linewidth=2.2)
+    ax2.plot(df_sens.index, df_sens["Retorno CDI (%)"], label="CDI", color=COL_CDI, linewidth=2.2)
+    ax2.set_title(f"Retorno (%) do DCA por horizonte ({df_sens.index.min()}–{df_sens.index.max()} anos)", pad=12)
     ax2.set_xlabel("Anos")
     ax2.set_ylabel("Retorno (%)")
-    ax2.grid(True)
-    ax2.legend()
-    st.pyplot(fig2)
+    ax2.grid(True, alpha=0.25)
+    ax2.legend(loc="best")
+    fig2.tight_layout()
+
+    st.pyplot(fig2, use_container_width=True)
 
 except Exception as e:
     st.error(f"Erro no app: {e}")
     st.stop()
-st.sidebar.divider()
-st.sidebar.caption("© LM Analytics — Leandro Medina")
-st.sidebar.caption("Dados: Yahoo Finance • Banco Central do Brasil")
