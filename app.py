@@ -149,30 +149,21 @@ st.markdown(
 )
 
 # =========================
-# HEADER (BRANDING)
+# HEADER (LOGO CENTRALIZADO)
 # =========================
-colA, colB = st.columns([1, 7], vertical_alignment="center")
-with colA:
-    try:
-        st.image(LOGO_PATH, width=92)
-    except Exception:
-        st.write("")
+st.markdown(
+    """
+    <div style="display:flex; justify-content:center; margin-top:10px; margin-bottom:10px;">
+    """,
+    unsafe_allow_html=True,
+)
 
-with colB:
-    st.markdown(
-        f"""
-        <div style="line-height:1.15">
-          <h1 style="margin-bottom:0;">{BRAND_NAME}</h1>
-          <p style="margin-top:6px; color:{MUTED};">{TAGLINE}</p>
-          <div class="lm-social" style="margin-top:6px;">
-            <a href="{INSTAGRAM_URL}" target="_blank">{SVG_IG}<span>Instagram</span></a>
-            <span style="margin:0 10px; color: rgba(255,255,255,0.10);">|</span>
-            <a href="{LINKEDIN_URL}" target="_blank">{SVG_IN}<span>LinkedIn</span></a>
-          </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+try:
+    st.image(LOGO_PATH, width=180)  # logo maior
+except Exception:
+    pass
+
+st.markdown("</div>", unsafe_allow_html=True)
 
 st.divider()
 
