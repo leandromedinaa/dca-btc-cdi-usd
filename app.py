@@ -159,7 +159,7 @@ st.markdown(
 )
 
 try:
-    st.image(LOGO_PATH, width=300)  # logo maior
+    st.image(LOGO_PATH, width=600)  # logo maior
 except Exception:
     pass
 
