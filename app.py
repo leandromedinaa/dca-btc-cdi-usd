@@ -11,15 +11,14 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 
-# -----------------------------
-# DEPENDÊNCIAS (adicione no requirements.txt):
+# requirements.txt precisa ter:
 # streamlit
 # pandas
 # numpy
 # matplotlib
 # yfinance
 # python-bcb
-# -----------------------------
+# requests
 from bcb import sgs
 import yfinance as yf
 
@@ -53,18 +52,18 @@ h1,h2,h3,h4 { color: #E5E7EB !important; }
 
 .header-wrap{
   text-align:center;
-  padding: 26px 0 6px 0;
+  padding: 24px 0 6px 0;
 }
 .logo-big{
   display:flex;
   justify-content:center;
   align-items:center;
-  margin-top: 6px;
-  margin-bottom: 12px;
+  margin-top: 4px;
+  margin-bottom: 10px;
 }
 .logo-big svg{
-  width: 150px;
-  height: 150px;
+  width: 160px;
+  height: 160px;
   filter: drop-shadow(0 0 18px rgba(0,229,255,0.38)) drop-shadow(0 0 26px rgba(124,77,255,0.22));
 }
 .subline{
@@ -76,18 +75,19 @@ h1,h2,h3,h4 { color: #E5E7EB !important; }
 .social a{
   text-decoration:none;
   margin: 0 10px;
-  font-weight: 600;
+  font-weight: 700;
   color: #38BDF8;
 }
 .social a:hover{
   color:#A78BFA;
-  text-shadow: 0 0 10px rgba(167,139,250,0.25);
+  text-shadow: 0 0 12px rgba(167,139,250,0.25);
 }
 .hr{
   height:1px;
   background: rgba(148,163,184,0.18);
   margin: 18px 0 16px 0;
 }
+
 .neon-btn button{
   border: 1px solid rgba(0,229,255,0.35) !important;
   box-shadow: 0 0 18px rgba(0,229,255,0.10), 0 0 26px rgba(124,77,255,0.08) !important;
@@ -143,20 +143,16 @@ LOGO_SVG = """
     </filter>
   </defs>
 
-  <!-- Hex -->
   <path d="M110 20 L182 62 V158 L110 200 L38 158 V62 Z"
         stroke="url(#gStroke)" stroke-width="6" filter="url(#glow)" />
 
-  <!-- Inner hex -->
   <path d="M110 40 L166 72 V148 L110 180 L54 148 V72 Z"
         stroke="rgba(124,77,255,0.35)" stroke-width="2" />
 
-  <!-- Chart line -->
   <path d="M68 132 L92 112 L112 122 L136 92 L152 78"
         stroke="url(#gStroke)" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"
         filter="url(#glow)" />
 
-  <!-- Nodes -->
   <circle cx="68" cy="132" r="5" fill="#00E5FF" filter="url(#glow)"/>
   <circle cx="92" cy="112" r="5" fill="#00E5FF" filter="url(#glow)"/>
   <circle cx="112" cy="122" r="5" fill="#00E5FF" filter="url(#glow)"/>
@@ -184,7 +180,7 @@ def _today() -> pd.Timestamp:
 
 
 def _start_from_years(years: int) -> pd.Timestamp:
-    # buffer para garantir meses completos
+    # buffer para meses completos
     return (_today() - pd.DateOffset(years=years)).normalize() - pd.DateOffset(days=7)
 
 
@@ -204,10 +200,10 @@ def _safe_pct(final: float, total: float) -> float:
 @st.cache_data(show_spinner=False, ttl=60 * 60)  # 1h
 def load_series_daily(start: pd.Timestamp) -> pd.DataFrame:
     """
-    Retorna DataFrame diário com colunas:
+    DataFrame diário:
     - BTC_USD (Yahoo)
-    - USD_BRL (BCB PTAX venda) -> aproximado diário (dias úteis)
-    - CDI_DAILY (BCB CDI diário) -> em % ao dia
+    - USD_BRL (BCB PTAX venda) -> interpolado
+    - CDI_DAILY (BCB CDI diário) -> interpolado
     """
 
     # ---- BTC USD (Yahoo) ----
@@ -218,28 +214,42 @@ def load_series_daily(start: pd.Timestamp) -> pd.DataFrame:
         auto_adjust=True,
         progress=False,
     )
-    if btc.empty:
+
+    if btc is None or btc.empty:
         raise RuntimeError("Não consegui baixar BTC-USD (Yahoo). Tente novamente mais tarde.")
-    btc_usd = btc["Close"].rename("BTC_USD")
+
+    # ✅ FIX: yfinance pode retornar colunas MultiIndex no Streamlit Cloud
+    if isinstance(btc.columns, pd.MultiIndex):
+        # tenta "Close" no nível 0
+        if "Close" in btc.columns.get_level_values(0):
+            close_df = btc["Close"]  # geralmente vira DataFrame
+            btc_close = close_df.iloc[:, 0] if isinstance(close_df, pd.DataFrame) else close_df
+        else:
+            btc_close = btc.iloc[:, 0]
+    else:
+        if "Close" in btc.columns:
+            btc_close = btc["Close"]
+        elif "Adj Close" in btc.columns:
+            btc_close = btc["Adj Close"]
+        else:
+            btc_close = btc.iloc[:, 0]
+
+    btc_usd = pd.Series(btc_close).astype(float)
+    btc_usd.name = "BTC_USD"
 
     # ---- USD/BRL (BCB - PTAX venda) ----
-    # Série 1: PTAX venda (USD) - código bem comum no SGS: 1
-    # Obs: em alguns ambientes o SGS pode variar; se der erro, ajuste o código.
-    usd_brl = sgs.get({"USD_BRL": 1}, start=start.strftime("%Y-%m-%d"))
-    usd_brl = usd_brl["USD_BRL"]
+    # PTAX venda USD/BRL (SGS) - em alguns ambientes pode precisar trocar o código
+    usd_brl_df = sgs.get({"USD_BRL": 1}, start=start.strftime("%Y-%m-%d"))
+    usd_brl = usd_brl_df["USD_BRL"].astype(float)
 
     # ---- CDI diário (BCB) ----
-    # CDI (ao dia) - SGS 12 é comum como CDI (% a.d.)
-    cdi = sgs.get({"CDI_DAILY": 12}, start=start.strftime("%Y-%m-%d"))
-    cdi = cdi["CDI_DAILY"]
+    cdi_df = sgs.get({"CDI_DAILY": 12}, start=start.strftime("%Y-%m-%d"))
+    cdi = cdi_df["CDI_DAILY"].astype(float)
 
     df = pd.concat([btc_usd, usd_brl, cdi], axis=1).sort_index()
-
-    # Limpeza básica
     df = df[~df.index.duplicated(keep="last")]
 
-    # Interpolar USD_BRL e CDI para dias corridos (para casar com BTC que tem todos os dias)
-    # (No Brasil, PTAX/CDI só em dias úteis)
+    # Interpola USD_BRL e CDI para casar com o BTC (que tem finais de semana)
     df["USD_BRL"] = df["USD_BRL"].interpolate(method="time").ffill().bfill()
     df["CDI_DAILY"] = df["CDI_DAILY"].ffill().bfill()
 
@@ -248,50 +258,39 @@ def load_series_daily(start: pd.Timestamp) -> pd.DataFrame:
 
 def daily_to_monthly_last(df_daily: pd.DataFrame) -> pd.DataFrame:
     # 'M' deprecated -> use 'ME' (month end)
-    df_m = df_daily.resample("ME").last()
-    return df_m
+    return df_daily.resample("ME").last()
 
 
 def compute_dca(df_monthly: pd.DataFrame, aporte_mensal: float) -> pd.DataFrame:
     """
-    Simula DCA mensal (aporte no último dia do mês):
-    - BTC (comprando BTC em BRL) via BTC_USD * USD_BRL
-    - USD (comprando dólar e mantendo em BRL) via USD_BRL
-    - CDI (aplicando em CDI diariamente; aqui aproximado pelo CDI_DAILY acumulado mês a mês)
-    Retorna DataFrame mensal com patrimônio acumulado (BRL).
+    DCA mensal (aporte no último dia do mês), em BRL:
+    - BTC: compra BTC em BRL via BTC_USD * USD_BRL
+    - USD: compra USD e marcação em BRL
+    - CDI: aporte + capitalização mensal aproximada
     """
     df = df_monthly.copy()
 
     # BTC em BRL
     df["BTC_BRL"] = df["BTC_USD"] * df["USD_BRL"]
 
-    # Índice acumulado de CDI (aprox):
-    # CDI_DAILY está em % ao dia -> vamos construir um fator mensal aproximando:
-    # Para cada mês, fator = produto (1 + cdi/100) nos dias do mês.
-    # Como aqui já estamos em "last do mês", precisamos refazer do diário.
-    # Solução: faremos CDI acumulado diário no df_daily antes de resample. Aqui, usamos aproximação:
-    # fator_mensal ~ (1 + cdi_dia/100)^(n_dias_uteis_mes) não temos n_dias aqui -> então melhor:
-    # A saída correta está no fluxo: vamos receber CDI_DAILY já interpolado diário e refazer do diário no cache.
-    # Para simplificar e manter estável: criamos CDI_FACTOR mensal a partir do diário via função abaixo.
-    # (Vamos exigir no pipeline que df_monthly veio do diário com CDI_DAILY interpolado.)
-    # Aqui, reconstruímos usando média do CDI diário no mês e número de dias corridos do mês (aprox).
+    # Fator mensal do CDI aproximado:
+    # CDI_DAILY (% ao dia) -> aproximar dias do mês usando delta do index
     cdi_daily = df["CDI_DAILY"]
-    # aprox dias por mês usando diferença de index
     days_in_month = df.index.to_series().diff().dt.days.fillna(30).clip(lower=28, upper=31)
     df["CDI_FACTOR_M"] = (1 + (cdi_daily / 100.0)) ** days_in_month
 
-    # DCA: BTC
+    # BTC DCA
     btc_units = (aporte_mensal / df["BTC_BRL"]).replace([np.inf, -np.inf], np.nan).fillna(0).cumsum()
     df["DCA_BTC_BRL"] = btc_units * df["BTC_BRL"]
 
-    # DCA: USD (compra dólar e mantém)
+    # USD DCA
     usd_units = (aporte_mensal / df["USD_BRL"]).replace([np.inf, -np.inf], np.nan).fillna(0).cumsum()
     df["DCA_USD_BRL"] = usd_units * df["USD_BRL"]
 
-    # DCA: CDI (aporta e capitaliza mensalmente pelo fator)
+    # CDI DCA
     cdi_value = []
     acc = 0.0
-    for i, row in df.iterrows():
+    for _, row in df.iterrows():
         acc = (acc + aporte_mensal) * float(row["CDI_FACTOR_M"])
         cdi_value.append(acc)
     df["DCA_CDI_BRL"] = cdi_value
@@ -302,17 +301,16 @@ def compute_dca(df_monthly: pd.DataFrame, aporte_mensal: float) -> pd.DataFrame:
 
 
 def plot_dca(df_dca: pd.DataFrame, anos: int, aporte: float) -> Tuple[plt.Figure, Dict[str, float]]:
-    fig = plt.figure(figsize=(14, 6.2), dpi=120)
+    fig = plt.figure(figsize=(14.5, 6.4), dpi=120)
     ax = fig.add_subplot(111)
 
-    # Cores profissionais (web3)
     c_btc = "#00E5FF"
     c_usd = "#A78BFA"
     c_cdi = "#34D399"
 
-    ax.plot(df_dca.index, df_dca["BTC"], label=f"Bitcoin (DCA {_fmt_brl(aporte)}/mês)", linewidth=2.4, color=c_btc)
-    ax.plot(df_dca.index, df_dca["USD"], label=f"Dólar (DCA {_fmt_brl(aporte)}/mês)", linewidth=2.0, color=c_usd)
-    ax.plot(df_dca.index, df_dca["CDI"], label=f"CDI (DCA {_fmt_brl(aporte)}/mês)", linewidth=2.0, color=c_cdi)
+    ax.plot(df_dca.index, df_dca["BTC"], label=f"Bitcoin (DCA {_fmt_brl(aporte)}/mês)", linewidth=2.6, color=c_btc)
+    ax.plot(df_dca.index, df_dca["USD"], label=f"Dólar (DCA {_fmt_brl(aporte)}/mês)", linewidth=2.1, color=c_usd)
+    ax.plot(df_dca.index, df_dca["CDI"], label=f"CDI (DCA {_fmt_brl(aporte)}/mês)", linewidth=2.1, color=c_cdi)
 
     ax.set_title(f"DCA Mensal — BTC vs USD vs CDI ({anos} anos)", fontsize=14, pad=12)
     ax.set_xlabel("Data")
@@ -320,7 +318,6 @@ def plot_dca(df_dca: pd.DataFrame, anos: int, aporte: float) -> Tuple[plt.Figure
     ax.grid(True, alpha=0.25)
     ax.legend(loc="upper left")
 
-    # métricas
     meses = len(df_dca)
     total = aporte * meses
     final_btc = float(df_dca["BTC"].iloc[-1])
@@ -356,27 +353,17 @@ def sensitivity_returns(
     horizonte_max: int,
     mode: str,
 ) -> pd.DataFrame:
-    """
-    Retorna retorno (%) por horizonte em anos.
-    mode:
-      - "final": fixa no final (últimos N anos)
-      - "janela": janela móvel escolhendo mês final (usa último mês como padrão; pode evoluir depois)
-    """
     horizons = list(range(horizonte_min, horizonte_max + 1))
     results = []
 
     for h in horizons:
         months = h * 12
         if len(df_dca_full) < months + 1:
-            # Sem dados suficientes
             results.append({"Horizonte (anos)": h, "BTC (%)": np.nan, "USD (%)": np.nan, "CDI (%)": np.nan})
             continue
 
-        if mode == "final":
-            df_slice = df_dca_full.iloc[-months:]
-        else:
-            # "janela" (por enquanto usando último mês como fim)
-            df_slice = df_dca_full.iloc[-months:]
+        # por enquanto: "janela" = último mês também (estável e sem quebrar)
+        df_slice = df_dca_full.iloc[-months:]
 
         total = aporte * len(df_slice)
         btc_f = float(df_slice["BTC"].iloc[-1])
@@ -396,7 +383,7 @@ def sensitivity_returns(
 
 
 def plot_sensitivity(df_sens: pd.DataFrame) -> plt.Figure:
-    fig = plt.figure(figsize=(14, 4.8), dpi=120)
+    fig = plt.figure(figsize=(14.5, 4.9), dpi=120)
     ax = fig.add_subplot(111)
 
     c_btc = "#00E5FF"
@@ -404,9 +391,9 @@ def plot_sensitivity(df_sens: pd.DataFrame) -> plt.Figure:
     c_cdi = "#34D399"
 
     x = df_sens["Horizonte (anos)"].values
-    ax.plot(x, df_sens["BTC (%)"].values, marker="o", linewidth=2.2, color=c_btc, label="BTC (%)")
-    ax.plot(x, df_sens["USD (%)"].values, marker="o", linewidth=2.0, color=c_usd, label="USD (%)")
-    ax.plot(x, df_sens["CDI (%)"].values, marker="o", linewidth=2.0, color=c_cdi, label="CDI (%)")
+    ax.plot(x, df_sens["BTC (%)"].values, marker="o", linewidth=2.3, color=c_btc, label="BTC (%)")
+    ax.plot(x, df_sens["USD (%)"].values, marker="o", linewidth=2.1, color=c_usd, label="USD (%)")
+    ax.plot(x, df_sens["CDI (%)"].values, marker="o", linewidth=2.1, color=c_cdi, label="CDI (%)")
 
     ax.set_title("Retorno (%) por horizonte (sensibilidade)", fontsize=13, pad=10)
     ax.set_xlabel("Horizonte (anos)")
@@ -417,7 +404,7 @@ def plot_sensitivity(df_sens: pd.DataFrame) -> plt.Figure:
 
 
 # =========================
-# HEADER (LOGO GRANDE)
+# HEADER
 # =========================
 st.markdown(
     f"""
@@ -435,7 +422,7 @@ st.markdown(
 )
 
 # =========================
-# NAV (Dashboard / About)
+# NAV
 # =========================
 tab = st.radio(
     "Navegação",
@@ -474,8 +461,8 @@ auto_refresh = st.sidebar.checkbox("Atualizar automaticamente", value=False)
 interval_sec = st.sidebar.number_input("Intervalo (segundos)", min_value=10, max_value=3600, value=60, step=10)
 btn_refresh = st.sidebar.button("Atualizar agora")
 
+# Auto refresh simples (rebuild a cada intervalo)
 if auto_refresh:
-    st.experimental_set_query_params(_t=str(pd.Timestamp.utcnow().value))
     st.cache_data.clear()
     st.experimental_rerun()
 
@@ -493,7 +480,7 @@ params = Params(
 )
 
 # =========================
-# PÁGINAS
+# PAGES
 # =========================
 if tab == "About / Metodologia":
     st.header("About / Metodologia")
@@ -502,9 +489,9 @@ if tab == "About / Metodologia":
         """
 ### O que este dashboard faz
 Este app simula um **DCA mensal** (aporte fixo todo mês) e compara o patrimônio acumulado em:
-- **Bitcoin (BTC)** — calculado em BRL via BTC-USD (Yahoo) × USD/BRL (PTAX BCB)
-- **Dólar (USD)** — compra mensal de USD e marcação a mercado em BRL pela PTAX
-- **CDI** — simulação com capitalização mensal usando fator aproximado a partir do CDI diário (BCB)
+- **Bitcoin (BTC)** — em BRL via BTC-USD (Yahoo) × USD/BRL (PTAX BCB)
+- **Dólar (USD)** — compra mensal de USD e marcação em BRL pela PTAX
+- **CDI** — simulação com capitalização mensal aproximada a partir do CDI diário (BCB)
 
 ### Fontes de dados
 - **BTC-USD:** Yahoo Finance (yfinance)  
@@ -512,20 +499,19 @@ Este app simula um **DCA mensal** (aporte fixo todo mês) e compara o patrimôni
 - **CDI diário:** Banco Central do Brasil (SGS)
 
 ### Observações importantes
-- O objetivo é **comparação educacional**.  
-- Não inclui impostos, taxas, spread de câmbio, corretagem, IOF ou custos operacionais.  
-- CDI é aproximado por fator mensal reconstruído do CDI diário.
+- Objetivo **educacional** (comparação e simulação).
+- Não inclui impostos, taxas, spread de câmbio, IOF ou custos operacionais.
+- O CDI é aproximado por fator mensal (boa aproximação visual e comparativa).
 
-### Licença / Aviso
-**Sem recomendação de investimento.** Use por sua conta e risco.
+**Sem recomendação de investimento.**
 """
     )
+
 else:
     # =========================
     # DASHBOARD
     # =========================
     try:
-        # Base do gráfico
         start = _start_from_years(params.anos_grafico)
         df_daily = load_series_daily(start)
         df_m = daily_to_monthly_last(df_daily)
@@ -543,13 +529,11 @@ else:
         df_sens = sensitivity_returns(df_dca_s, params.aporte_mensal, params.horizonte_min, params.horizonte_max, params.sens_mode)
         fig_sens = plot_sensitivity(df_sens)
 
-        # Layout
-        col_plot, col_metrics = st.columns([1.6, 1.0], gap="large")
+        col_plot, col_metrics = st.columns([1.65, 1.0], gap="large")
 
         with col_plot:
             st.pyplot(fig_main, clear_figure=False)
 
-            # Export PDF
             pdf_bytes = to_pdf_bytes(fig_main)
             st.markdown('<div class="neon-btn">', unsafe_allow_html=True)
             st.download_button(
