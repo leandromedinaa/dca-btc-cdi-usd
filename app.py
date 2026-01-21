@@ -6,8 +6,31 @@ import yfinance as yf
 import requests
 import streamlit as st
 
-st.set_page_config(page_title="DCA BTC x CDI x USD", layout="wide")
-st.title("DCA Mensal — BTC vs CDI vs USD (BRL)")
+st.set_page_config(page_title="LM Analytics — DCA BTC x CDI x USD",
+    page_icon="assets/logo.svg",
+    layout="wide", # ====== BRAND HEADER ======
+colA, colB = st.columns([1, 7], vertical_alignment="center")
+
+with colA:
+    st.image("assets/logo.svg", width=90)
+
+with colB:
+    st.markdown(
+        """
+        <div style="line-height:1.15">
+          <h1 style="margin-bottom:0;">
+            LM Analytics
+          </h1>
+          <p style="margin-top:6px; color:#8A8F98;">
+            Research & simulações de investimento • Web3 • Dados reais
+          </p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+st.divider()
+)
 
 # =========================
 # SIDEBAR (CONTROLES)
@@ -342,3 +365,6 @@ try:
 except Exception as e:
     st.error(f"Erro no app: {e}")
     st.stop()
+st.sidebar.divider()
+st.sidebar.caption("© LM Analytics — Leandro Medina")
+st.sidebar.caption("Dados: Yahoo Finance • Banco Central do Brasil")

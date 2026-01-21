@@ -1,0 +1,24 @@
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+
+  <!-- Background -->
+  <rect width="512" height="512" rx="96" fill="#0E1117"></rect>
+
+  <!-- Hexagon -->
+  <polygon points="256,80 392,160 392,320 256,400 120,320 120,160" stroke="#00E5FF" stroke-width="16" fill="none"></polygon>
+
+  <!-- Chart line -->
+  <polyline points="160,300 210,250 260,280 310,210 350,190" stroke="#7C4DFF" stroke-width="12" fill="none" stroke-linecap="round" stroke-linejoin="round"></polyline>
+
+  <!-- Dots -->
+  <circle cx="160" cy="300" r="6" fill="#00E5FF"></circle>
+  <circle cx="210" cy="250" r="6" fill="#00E5FF"></circle>
+  <circle cx="260" cy="280" r="6" fill="#00E5FF"></circle>
+  <circle cx="310" cy="210" r="6" fill="#00E5FF"></circle>
+  <circle cx="350" cy="190" r="6" fill="#00E5FF"></circle>
+
+  <!-- Text -->
+  <text x="256" y="455" text-anchor="middle" fill="#E6E6E6" font-size="40" font-family="Arial, Helvetica, sans-serif" letter-spacing="2">
+    LM
+  </text>
+
+</svg>
