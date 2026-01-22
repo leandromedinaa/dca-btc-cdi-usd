@@ -152,6 +152,194 @@ st.markdown(
 )
 
 # =========================
+# PREMIUM CSS (GLASS / NEON)
+# =========================
+
+def inject_premium_css():
+    st.markdown(
+        """
+<style>
+/* =========================
+   LM Analytics — Premium UI
+   ========================= */
+:root {
+  --bg0: #070A10;
+  --bg1: #0B1020;
+  --card: rgba(255,255,255,0.06);
+  --border: rgba(255,255,255,0.10);
+  --border2: rgba(255,255,255,0.14);
+  --text: rgba(255,255,255,0.92);
+  --muted: rgba(255,255,255,0.64);
+  --accent: #00E5FF;
+  --accent2: #7C4DFF;
+  --shadow: 0 18px 60px rgba(0,0,0,0.55);
+  --shadow2: 0 10px 30px rgba(0,0,0,0.45);
+  --radius: 18px;
+}
+
+html, body, [class*="stApp"] {
+  background: radial-gradient(1200px 900px at 20% 10%, rgba(124,77,255,0.18), transparent 55%),
+              radial-gradient(900px 700px at 70% 30%, rgba(0,229,255,0.18), transparent 55%),
+              linear-gradient(180deg, var(--bg0) 0%, var(--bg1) 35%, var(--bg0) 100%) !important;
+  color: var(--text) !important;
+}
+
+header[data-testid="stHeader"] { background: transparent !important; }
+footer { visibility: hidden; }
+
+section.main > div { padding-top: 1.25rem; }
+.block-container { padding-top: 1.1rem; padding-bottom: 2.5rem; max-width: 1400px; }
+
+* { font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji","Segoe UI Emoji"; }
+h1, h2, h3 { letter-spacing: -0.02em; }
+
+.stApp:before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.09;
+  background-image:
+    linear-gradient(rgba(255,255,255,0.06) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,0.06) 1px, transparent 1px);
+  background-size: 48px 48px;
+  mask-image: radial-gradient(800px 480px at 35% 18%, black 30%, transparent 65%);
+}
+
+/* Sidebar */
+[data-testid="stSidebar"] {
+  background: linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.03)) !important;
+  border-right: 1px solid var(--border);
+  backdrop-filter: blur(14px);
+}
+[data-testid="stSidebar"] > div:first-child { padding: 1.1rem 1rem 1.3rem; }
+
+/* Checkbox */
+.stCheckbox [data-baseweb="checkbox"] > div {
+  border-radius: 8px !important;
+  border: 1px solid var(--border2) !important;
+  background: rgba(255,255,255,0.04) !important;
+}
+
+/* Selectbox / inputs */
+[data-baseweb="select"] > div {
+  border-radius: 14px !important;
+  border: 1px solid var(--border2) !important;
+  background: rgba(255,255,255,0.05) !important;
+  box-shadow: var(--shadow2);
+}
+.stNumberInput input, .stTextInput input {
+  border-radius: 14px !important;
+  border: 1px solid var(--border2) !important;
+  background: rgba(255,255,255,0.05) !important;
+}
+
+/* Slider knob */
+.stSlider [data-baseweb="slider"] div[role="slider"] {
+  box-shadow: 0 0 0 6px rgba(0,229,255,0.10), 0 0 20px rgba(0,229,255,0.35) !important;
+}
+
+/* Containers (border=True) */
+div[data-testid="stVerticalBlockBorderWrapper"] > div {
+  background: linear-gradient(180deg, rgba(255,255,255,0.07), rgba(255,255,255,0.04)) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: var(--radius) !important;
+  box-shadow: var(--shadow) !important;
+}
+div[data-testid="stVerticalBlockBorderWrapper"] > div { padding: 1.0rem 1.1rem; }
+
+/* Buttons */
+.stButton button, .stDownloadButton button {
+  border-radius: 14px !important;
+  border: 1px solid rgba(0,229,255,0.30) !important;
+  background: linear-gradient(135deg, rgba(0,229,255,0.18), rgba(124,77,255,0.16)) !important;
+  color: var(--text) !important;
+  box-shadow: 0 12px 30px rgba(0,229,255,0.10), 0 12px 30px rgba(124,77,255,0.10) !important;
+  transition: transform .12s ease, box-shadow .12s ease, border-color .12s ease;
+}
+.stButton button:hover, .stDownloadButton button:hover {
+  transform: translateY(-1px);
+  border-color: rgba(0,229,255,0.55) !important;
+  box-shadow: 0 18px 50px rgba(0,229,255,0.18), 0 18px 50px rgba(124,77,255,0.16) !important;
+}
+.stButton button:active, .stDownloadButton button:active { transform: translateY(0px) scale(0.99); }
+
+/* Tabs */
+.stTabs [data-baseweb="tab-list"] {
+  background: rgba(255,255,255,0.04);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 6px;
+  gap: 6px;
+  box-shadow: var(--shadow2);
+}
+.stTabs [data-baseweb="tab"] {
+  border-radius: 12px !important;
+  color: rgba(255,255,255,0.64) !important;
+  background: transparent !important;
+  padding: 10px 14px !important;
+}
+.stTabs [aria-selected="true"] {
+  color: var(--text) !important;
+  background: linear-gradient(135deg, rgba(0,229,255,0.18), rgba(124,77,255,0.16)) !important;
+  border: 1px solid rgba(0,229,255,0.22) !important;
+}
+
+/* Metrics */
+[data-testid="stMetric"] {
+  background: rgba(255,255,255,0.05);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 12px 12px;
+  box-shadow: var(--shadow2);
+}
+[data-testid="stMetricLabel"] p { color: rgba(255,255,255,0.64) !important; }
+[data-testid="stAlert"] {
+  border-radius: 16px !important;
+  border: 1px solid var(--border2) !important;
+  background: rgba(255,255,255,0.06) !important;
+  box-shadow: var(--shadow2) !important;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 12px; height: 12px; }
+::-webkit-scrollbar-thumb {
+  background: rgba(255,255,255,0.14);
+  border: 3px solid rgba(0,0,0,0);
+  background-clip: padding-box;
+  border-radius: 999px;
+}
+::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.22); }
+
+/* Titlebar helpers */
+.lm-titlebar {
+  display:flex; align-items:center; gap:14px;
+  padding: 14px 16px;
+  border: 1px solid rgba(255,255,255,0.10);
+  background: linear-gradient(135deg, rgba(0,229,255,0.10), rgba(124,77,255,0.10));
+  border-radius: 18px;
+  box-shadow: var(--shadow2);
+  margin: 12px 0 14px 0;
+}
+.lm-badge {
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(0,229,255,0.28);
+  background: rgba(0,229,255,0.10);
+  color: rgba(255,255,255,0.92);
+  font-size: 12px;
+}
+.lm-muted { color: rgba(255,255,255,0.64) !important; font-size: 13px; }
+</style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+inject_premium_css()
+
+
+
+# =========================
 # HEADER (LOGO CENTRALIZADO)
 # =========================
 st.markdown(
@@ -168,6 +356,27 @@ except Exception:
 
 st.markdown("</div>", unsafe_allow_html=True)
 st.divider()
+
+# Premium title bar (clean, product-like)
+st.markdown(
+    """
+<div class="lm-titlebar">
+  <div style="width:10px;height:10px;border-radius:999px;background:#00E5FF;box-shadow:0 0 18px rgba(0,229,255,.6)"></div>
+  <div style="display:flex;flex-direction:column;line-height:1.1">
+    <div style="font-size:22px;font-weight:800;letter-spacing:-0.02em">LM Analytics</div>
+    <div class="lm-muted">DCA • BTC vs CDI vs USD • Ajustes macro (IPCA/CPI/FED)</div>
+  </div>
+  <div style="margin-left:auto;display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end">
+    <span class="lm-badge">BR</span>
+    <span class="lm-badge">US</span>
+    <span class="lm-badge">Nominal x Real</span>
+  </div>
+</div>
+    """,
+    unsafe_allow_html=True,
+)
+
+
 
 # =========================
 # UTIL: FRED API KEY
