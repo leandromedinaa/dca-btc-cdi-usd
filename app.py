@@ -544,9 +544,20 @@ def build_macro_indices(df_m_full: pd.DataFrame, data_ini_br: str, data_fim_br: 
         raise RuntimeError("CPI (CPIAUCSL/FRED) sem dados no intervalo selecionado.")
     if fed_pct.isna().all():
         raise RuntimeError("FEDFUNDS/FRED sem dados no intervalo selecionado.")
-
     # Índices (base 1.0 no início do período do app)
-    ipca_index = (ipca_lvl / float(ipca_lvl.iloc[0])).rename("IPCA_INDEX")
+    # IPCA (SGS) pode vir como:
+    # - nível do índice (valores "altos", ex.: 100, 200, 6000...)
+    # - ou variação mensal em % (valores "baixos", ex.: 0.2, 1.1, 0.8...)
+    # Detectamos e construímos um índice acumulado mensal robusto.
+    ipca_med = float(ipca_lvl.dropna().median()) if not ipca_lvl.dropna().empty else 0.0
+    if ipca_med >= 20.0:
+        # Parece nível do índice: normaliza pelo primeiro valor.
+        ipca_index = (ipca_lvl / float(ipca_lvl.iloc[0])).rename("IPCA_INDEX")
+    else:
+        # Parece variação mensal em %: acumula via cumprod.
+        ipca_index = (1.0 + (ipca_lvl / 100.0)).cumprod()
+        ipca_index = (ipca_index / float(ipca_index.iloc[0])).rename("IPCA_INDEX")
+
     cpi_index = (cpi_lvl / float(cpi_lvl.iloc[0])).rename("CPI_INDEX")
 
     # Fed Funds: taxa anual (%) -> taxa efetiva mensal aproximada -> índice acumulado
@@ -667,35 +678,33 @@ def cdi_poder_compra_brl(df_m: pd.DataFrame, df_macro: pd.DataFrame, aporte_brl)
 
 def cdi_poder_compra_ipca_anual(df_m: pd.DataFrame, df_macro: pd.DataFrame, aporte_brl) -> pd.Series:
     """
-    Simula "poder de compra" com degraus anuais:
+    Simula "poder de compra" com degraus anuais (modelo econômico/intuítivo):
 
     - Aporte mensal em BRL aplicado em CDI (juros mensais via variação do índice CDI)
-    - No fechamento de cada ano-calendário, desconta o IPCA acumulado no ano
-      (equivalente a dividir por (IPCA_dez / IPCA_jan) dentro do período observado)
+    - No fechamento de cada ano-calendário, desconta o IPCA acumulado no ano.
 
-    Observação:
-    - Se o período não começar em janeiro, o IPCA "anual" do primeiro ano é calculado
-      do primeiro mês disponível até o último mês daquele ano (mesma lógica para o último ano,
-      porém o desconto só é aplicado quando o ano fecha dentro da série).
+    Implementação robusta:
+    - O IPCA anual é derivado diretamente de IPCA_INDEX (base 1.0), evitando confusão entre
+      "nível do índice" vs "variação %".
+      fator_ano = (IPCA_INDEX_dez / IPCA_INDEX_jan) - 1
     """
     if df_m.empty:
         return pd.Series(dtype=float)
 
     idx = df_m.index
-    if "CDI" not in df_m.columns or "IPCA" not in df_macro.columns:
+    if "CDI" not in df_m.columns or "IPCA_INDEX" not in df_macro.columns:
         return pd.Series(index=idx, dtype=float)
 
     cdi_index = df_m["CDI"].reindex(idx).ffill()
     # Retorno mensal do CDI a partir do índice acumulado
     cdi_ret_m = cdi_index.pct_change().fillna(0.0)
 
-    ipca_lvl = df_macro["IPCA"].reindex(idx).ffill().bfill()
+    ipca_index = df_macro["IPCA_INDEX"].reindex(idx).ffill().bfill()
     years = idx.year
 
-    # IPCA acumulado dentro de cada ano (usando níveis do índice)
-    # fator_ano = last/first - 1
+    # IPCA acumulado dentro de cada ano (usando o índice acumulado)
     ipca_year_factor = (
-        ipca_lvl.groupby(years)
+        ipca_index.groupby(years)
         .apply(lambda s: float(s.iloc[-1] / s.iloc[0]) - 1.0 if len(s) else 0.0)
         .to_dict()
     )
