@@ -971,7 +971,7 @@ with tab_dash:
         st.error(f"Erro no app: {e}")
         st.info(
             "Se o erro for sobre FRED_API_KEY, crie um arquivo .streamlit/secrets.toml com:\n\n"
-            "FRED_API_KEY = \"2898946a1cb83cc98019d725ebb62363"\n\n"
+            "FRED_API_KEY = \"SUA_API_KEY_AQUI\"\n\n"
             "Ou defina a variável de ambiente FRED_API_KEY."
         )
         st.stop()
