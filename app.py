@@ -200,6 +200,12 @@ with st.sidebar:
     toggle_usd_real = st.checkbox("Ajustar valores em USD real (CPI)", value=False)
     toggle_fed = st.checkbox("Mostrar benchmark USD + juros FED", value=True)
 
+    toggle_pp_anual = st.checkbox(
+        "Mostrar CDI (poder de compra – IPCA anual)",
+        value=True,
+        help="Simula aporte mensal em CDI e desconta o IPCA acumulado no fechamento de cada ano (curva em degraus).",
+    )
+
     st.caption("Fontes macro: IPCA (BCB/SGS 433), CPI e FEDFUNDS (FRED).")
 
     st.divider()
@@ -659,6 +665,66 @@ def cdi_poder_compra_brl(df_m: pd.DataFrame, df_macro: pd.DataFrame, aporte_brl)
     return carteira_real
 
 
+def cdi_poder_compra_ipca_anual(df_m: pd.DataFrame, df_macro: pd.DataFrame, aporte_brl) -> pd.Series:
+    """
+    Simula "poder de compra" com degraus anuais:
+
+    - Aporte mensal em BRL aplicado em CDI (juros mensais via variação do índice CDI)
+    - No fechamento de cada ano-calendário, desconta o IPCA acumulado no ano
+      (equivalente a dividir por (IPCA_dez / IPCA_jan) dentro do período observado)
+
+    Observação:
+    - Se o período não começar em janeiro, o IPCA "anual" do primeiro ano é calculado
+      do primeiro mês disponível até o último mês daquele ano (mesma lógica para o último ano,
+      porém o desconto só é aplicado quando o ano fecha dentro da série).
+    """
+    if df_m.empty:
+        return pd.Series(dtype=float)
+
+    idx = df_m.index
+    if "CDI" not in df_m.columns or "IPCA" not in df_macro.columns:
+        return pd.Series(index=idx, dtype=float)
+
+    cdi_index = df_m["CDI"].reindex(idx).ffill()
+    # Retorno mensal do CDI a partir do índice acumulado
+    cdi_ret_m = cdi_index.pct_change().fillna(0.0)
+
+    ipca_lvl = df_macro["IPCA"].reindex(idx).ffill().bfill()
+    years = idx.year
+
+    # IPCA acumulado dentro de cada ano (usando níveis do índice)
+    # fator_ano = last/first - 1
+    ipca_year_factor = (
+        ipca_lvl.groupby(years)
+        .apply(lambda s: float(s.iloc[-1] / s.iloc[0]) - 1.0 if len(s) else 0.0)
+        .to_dict()
+    )
+
+    valor = 0.0
+    out = []
+
+    for i, dt in enumerate(idx):
+        # aporte mensal
+        a = float(aporte_brl.loc[dt]) if isinstance(aporte_brl, pd.Series) else float(aporte_brl)
+        if pd.notna(a) and a > 0:
+            valor += a
+
+        # juros CDI do mês
+        r = float(cdi_ret_m.loc[dt]) if pd.notna(cdi_ret_m.loc[dt]) else 0.0
+        valor *= (1.0 + r)
+
+        # aplica inflação ao final do ano (quando o próximo mês muda de ano)
+        if i < len(idx) - 1 and idx[i + 1].year != dt.year:
+            infl = float(ipca_year_factor.get(dt.year, 0.0))
+            if infl > -0.99:
+                valor /= (1.0 + infl)
+
+        out.append(valor)
+
+    return pd.Series(out, index=idx, name="CDI_PODER_COMPRA_IPCA_ANUAL")
+
+
+
 def _plot_dca_figure(df_dca: pd.DataFrame, unidade: str, titulo: str):
     fig, ax = plt.subplots(figsize=(16, 7), dpi=140)
 
@@ -676,6 +742,15 @@ def _plot_dca_figure(df_dca: pd.DataFrame, unidade: str, titulo: str):
             color=COL_PP,
             linewidth=2.1,
             linestyle="--",
+        )
+    if "CDI (poder de compra anual)" in df_dca.columns:
+        ax.plot(
+            df_dca.index,
+            df_dca["CDI (poder de compra anual)"],
+            label="CDI (poder de compra, IPCA anual)",
+            color=COL_PP,
+            linewidth=2.1,
+            linestyle=":",
         )
     if "FED (USD+juros)" in df_dca.columns:
         ax.plot(df_dca.index, df_dca["FED (USD+juros)"], label="USD + juros FED (DCA)", color=COL_FED, linewidth=2.2)
@@ -753,6 +828,8 @@ with tab_dash:
                 # Linha extra: CDI (aporte + juros) deflacionado pelo IPCA (poder de compra)
                 if base_br.startswith("BRL"):
                     df_dca_br["CDI (poder de compra)"] = cdi_poder_compra_brl(df_m_plot, df_macro, float(aporte_brl))
+                if toggle_pp_anual:
+                    df_dca_br["CDI (poder de compra anual)"] = cdi_poder_compra_ipca_anual(df_m_plot, df_macro, float(aporte_brl))
 
                 col1, col2 = st.columns([3, 1.2], gap="large")
                 with col1:
@@ -782,6 +859,21 @@ with tab_dash:
                                 f"{res_br.loc[ativo,'Valor Final']:,.2f} {unidade_br}".replace(" ,", ","),
                                 f"{res_br.loc[ativo,'Retorno (%)']:.2f}%",
                             )
+                    
+
+                    if "CDI (poder de compra)" in res_br.index:
+                        st.metric(
+                            "Final CDI (poder de compra, IPCA)",
+                            f"{res_br.loc['CDI (poder de compra)','Valor Final']:,.2f} {unidade_br}".replace(" ,", ","),
+                            f"{res_br.loc['CDI (poder de compra)','Retorno (%)']:.2f}%",
+                        )
+                    if "CDI (poder de compra anual)" in res_br.index:
+                        st.metric(
+                            "Final CDI (poder de compra, IPCA anual)",
+                            f"{res_br.loc['CDI (poder de compra anual)','Valor Final']:,.2f} {unidade_br}".replace(" ,", ","),
+                            f"{res_br.loc['CDI (poder de compra anual)','Retorno (%)']:.2f}%",
+                        )
+
                     st.caption("BRL real = deflacionado por IPCA (SGS 433).")
 
             # --- Exterior ---
@@ -853,6 +945,8 @@ with tab_dash:
             # Linha extra: CDI (aporte + juros) deflacionado pelo IPCA (poder de compra) — somente para bases BRL
             if moeda_base.startswith("BRL"):
                 df_dca_plot["CDI (poder de compra)"] = cdi_poder_compra_brl(df_m_plot, df_macro, float(aporte))
+                if toggle_pp_anual:
+                    df_dca_plot["CDI (poder de compra anual)"] = cdi_poder_compra_ipca_anual(df_m_plot, df_macro, float(aporte))
             resultado_plot = resumo_dca(df_dca_plot, aporte_plot_base)
 
             # Layout principal
@@ -887,6 +981,21 @@ with tab_dash:
                             f"{resultado_plot.loc[ativo,'Valor Final']:,.2f} {unidade_plot}".replace(" ,", ","),
                             f"{resultado_plot.loc[ativo,'Retorno (%)']:.2f}%",
                         )
+
+                
+
+                if "CDI (poder de compra)" in resultado_plot.index:
+                    st.metric(
+                        "Final CDI (poder de compra, IPCA)",
+                        f"{resultado_plot.loc['CDI (poder de compra)','Valor Final']:,.2f} {unidade_plot}".replace(" ,", ","),
+                        f"{resultado_plot.loc['CDI (poder de compra)','Retorno (%)']:.2f}%",
+                    )
+                if "CDI (poder de compra anual)" in resultado_plot.index:
+                    st.metric(
+                        "Final CDI (poder de compra, IPCA anual)",
+                        f"{resultado_plot.loc['CDI (poder de compra anual)','Valor Final']:,.2f} {unidade_plot}".replace(" ,", ","),
+                        f"{resultado_plot.loc['CDI (poder de compra anual)','Retorno (%)']:.2f}%",
+                    )
 
                 st.caption("BTC em BRL = BTC-USD × USD/BRL (BCB). IPCA (SGS 433). CPI/FEDFUNDS via FRED.")
                 st.divider()
