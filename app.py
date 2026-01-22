@@ -482,54 +482,22 @@ with st.container(border=True):
     st.markdown("### ⚡ Menu rápido (mobile)")
     c1, c2, c3, c4 = st.columns(4, gap="small")
     with c1:
-        if st.button("📈 Invest.", use_container_width=True):
+        if st.button("📈 Invest.", use_container_width=True, key="qm_invest"):
             st.session_state.active_view = "invest"
     with c2:
-        if st.button("🌍 Macro", use_container_width=True):
+        if st.button("🌍 Macro", use_container_width=True, key="qm_macro"):
             st.session_state.active_view = "macro"
     with c3:
-        if st.button("🧩 Ambos", use_container_width=True):
+        if st.button("🧩 Ambos", use_container_width=True, key="qm_both"):
             st.session_state.active_view = "both"
     with c4:
-        if st.button("🧹 Cache", use_container_width=True):
+        if st.button("🧹 Cache", use_container_width=True, key="qm_cache"):
             st.cache_data.clear()
             st.toast("Cache limpo. Recarregando...", icon="🧹")
             st.rerun()
 
 show_invest = st.session_state.active_view in ("invest", "both")
 show_macro = st.session_state.active_view in ("macro", "both")
-
-
-# =========================
-# QUICK MENU (MOBILE FRIENDLY)
-# =========================
-if "active_view" not in st.session_state:
-    # invest = mostra só investimento puro; macro = mostra só gráficos macro; both = mostra tudo
-    st.session_state.active_view = "invest"
-
-with st.container(border=True):
-    st.markdown("### ⚡ Menu rápido (mobile)")
-    c1, c2, c3, c4 = st.columns(4, gap="small")
-    with c1:
-        if st.button("📈 Invest.", use_container_width=True):
-            st.session_state.active_view = "invest"
-    with c2:
-        if st.button("🌍 Macro", use_container_width=True):
-            st.session_state.active_view = "macro"
-    with c3:
-        if st.button("🧩 Ambos", use_container_width=True):
-            st.session_state.active_view = "both"
-    with c4:
-        if st.button("🧹 Cache", use_container_width=True):
-            st.cache_data.clear()
-            st.toast("Cache limpo. Recarregando...", icon="🧹")
-            st.rerun()
-
-show_invest = st.session_state.active_view in ("invest", "both")
-show_macro = st.session_state.active_view in ("macro", "both")
-
-
-
 
 # =========================
 # UTIL: FRED API KEY
