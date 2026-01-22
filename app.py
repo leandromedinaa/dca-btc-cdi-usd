@@ -495,45 +495,73 @@ def _to_month_end(df: pd.DataFrame) -> pd.DataFrame:
 def build_macro_indices(df_m_full: pd.DataFrame, data_ini_br: str, data_fim_br: str, start_iso: str, end_iso: str):
     """
     Retorna df_macro indexado em ME com:
-    - IPCA_INDEX (base 1.0 no início)
-    - CPI_INDEX (base 1.0 no início)
+    - IPCA_INDEX (base 1.0 no início do período do app)
+    - CPI_INDEX (base 1.0 no início do período do app)
     - FED_INDEX (base 1.0 no início; acumula taxa efetiva mensal derivada da taxa anual)
-    Também retorna algumas séries úteis (IPCA, CPIAUCSL, FEDFUNDS).
+
+    Observação importante:
+    - Após reamostragem mensal e reindex para o índice do app, usamos ffill() e, se ainda
+      houver NaN no início (muito comum quando a série começa alguns meses depois),
+      aplicamos bfill() *apenas dentro do range do app* para definir a base inicial.
+      Isso evita o bug clássico: IPCA_INDEX vira tudo NaN (e o ajuste real "não parece funcionar").
     """
     # IPCA (SGS 433) - pode ter granularidade mensal; garantimos ME
-    df_ipca = _to_month_end(baixar_ipca(data_ini_br, data_fim_br))
+    df_ipca_raw = _to_month_end(baixar_ipca(data_ini_br, data_fim_br))
     # FRED - CPI e FedFunds
-    df_cpi = _to_month_end(baixar_cpi_fred(start_iso, end_iso))
-    df_fed = _to_month_end(baixar_fedfunds_fred(start_iso, end_iso, series_id="FEDFUNDS"))
+    df_cpi_raw = _to_month_end(baixar_cpi_fred(start_iso, end_iso))
+    df_fed_raw = _to_month_end(baixar_fedfunds_fred(start_iso, end_iso, series_id="FEDFUNDS"))
 
-    # Alinha ao índice mensal do app (para não inventar meses fora do range)
+    # Índice mensal do app (para não inventar meses fora do range)
     idx = df_m_full.index
-    df_ipca = df_ipca.reindex(idx).ffill()
-    df_cpi = df_cpi.reindex(idx).ffill()
-    df_fed = df_fed.reindex(idx).ffill()
 
-    # Índices (base 1.0)
-    ipca_index = (df_ipca["IPCA"] / df_ipca["IPCA"].iloc[0]).rename("IPCA_INDEX")
-    cpi_index = (df_cpi["CPIAUCSL"] / df_cpi["CPIAUCSL"].iloc[0]).rename("CPI_INDEX")
+    def _align_monthly_series(df: pd.DataFrame, col: str) -> pd.Series:
+        if df is None or df.empty or col not in df.columns:
+            return pd.Series(index=idx, dtype=float)
+        s = df[col].copy()
+        s.index = pd.to_datetime(s.index)
+        s = s.sort_index().reindex(idx)
+        # ffill dentro do range, mas pode deixar NaN no início
+        s = s.ffill()
+        # se ainda tem NaN no começo, traz o primeiro valor válido dentro do range do app
+        if s.isna().any():
+            s = s.bfill()
+        return s.astype(float)
 
-    # Fed Funds: taxa anual (%) -> taxa efetiva mensal aproximada
-    fed_annual = df_fed["FEDFUNDS"].astype(float) / 100.0
+    ipca_lvl = _align_monthly_series(df_ipca_raw, "IPCA")
+    cpi_lvl = _align_monthly_series(df_cpi_raw, "CPIAUCSL")
+    fed_pct = _align_monthly_series(df_fed_raw, "FEDFUNDS")  # % a.a. (anualizada)
+
+    if ipca_lvl.isna().all():
+        raise RuntimeError("IPCA (SGS 433) sem dados no intervalo selecionado.")
+    if cpi_lvl.isna().all():
+        raise RuntimeError("CPI (CPIAUCSL/FRED) sem dados no intervalo selecionado.")
+    if fed_pct.isna().all():
+        raise RuntimeError("FEDFUNDS/FRED sem dados no intervalo selecionado.")
+
+    # Índices (base 1.0 no início do período do app)
+    ipca_index = (ipca_lvl / float(ipca_lvl.iloc[0])).rename("IPCA_INDEX")
+    cpi_index = (cpi_lvl / float(cpi_lvl.iloc[0])).rename("CPI_INDEX")
+
+    # Fed Funds: taxa anual (%) -> taxa efetiva mensal aproximada -> índice acumulado
+    fed_annual = (fed_pct / 100.0).clip(lower=-0.9999)  # segurança numérica
     fed_m = (1.0 + fed_annual).pow(1.0 / 12.0) - 1.0
     fed_index = (1.0 + fed_m).cumprod()
-    fed_index = (fed_index / fed_index.iloc[0]).rename("FED_INDEX")
+    fed_index = (fed_index / float(fed_index.iloc[0])).rename("FED_INDEX")
 
     df_macro = pd.concat(
         [
-            df_ipca["IPCA"],
-            df_cpi["CPIAUCSL"],
-            df_fed["FEDFUNDS"],
+            ipca_lvl.rename("IPCA"),
+            cpi_lvl.rename("CPIAUCSL"),
+            fed_pct.rename("FEDFUNDS"),
             ipca_index,
             cpi_index,
             fed_index,
         ],
         axis=1,
-    )
+    ).reindex(idx)
+
     return df_macro
+
 
 
 def build_prices(
