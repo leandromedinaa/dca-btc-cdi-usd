@@ -943,7 +943,8 @@ def cdi_poder_compra_ipca_anual(df_m: pd.DataFrame, df_macro: pd.DataFrame, apor
 
 
 
-def _plot_dca_figure(df_dca: pd.DataFrame, unidade: str, titulo: str):
+def _plot_invest_figure(df_dca: pd.DataFrame, unidade: str, titulo: str):
+    """Gráfico principal: somente investimentos 'puros' (nominal/base selecionada)."""
     fig, ax = plt.subplots(figsize=(16, 7), dpi=140)
 
     if "BTC" in df_dca.columns:
@@ -952,30 +953,92 @@ def _plot_dca_figure(df_dca: pd.DataFrame, unidade: str, titulo: str):
         ax.plot(df_dca.index, df_dca["USD"], label="USD (DCA)", color=COL_USD, linewidth=2.3)
     if "CDI" in df_dca.columns:
         ax.plot(df_dca.index, df_dca["CDI"], label="CDI (DCA)", color=COL_CDI, linewidth=2.3)
-    if "CDI (poder de compra)" in df_dca.columns:
-        ax.plot(
-            df_dca.index,
-            df_dca["CDI (poder de compra)"],
-            label="CDI (poder de compra, IPCA)",
-            color=COL_PP,
-            linewidth=2.1,
-            linestyle="--",
-        )
-    if "CDI (poder de compra anual)" in df_dca.columns:
-        ax.plot(
-            df_dca.index,
-            df_dca["CDI (poder de compra anual)"],
-            label="CDI (poder de compra, IPCA anual)",
-            color=COL_PP,
-            linewidth=2.1,
-            linestyle=":",
-        )
     if "FED (USD+juros)" in df_dca.columns:
         ax.plot(df_dca.index, df_dca["FED (USD+juros)"], label="USD + juros FED (DCA)", color=COL_FED, linewidth=2.2)
 
     ax.set_title(titulo, pad=14)
     ax.set_xlabel("Data")
     ax.set_ylabel(f"Patrimônio acumulado ({unidade})")
+    ax.grid(True, alpha=0.22)
+    ax.legend(loc="upper left")
+    fig.tight_layout()
+    return fig
+
+
+def _plot_macro_figure(
+    df_dca_macro: pd.DataFrame,
+    unidade: str,
+    titulo: str,
+):
+    """Gráfico macro: curvas de poder de compra / inflação (IPCA/CPI) e benchmarks reais."""
+    fig, ax = plt.subplots(figsize=(16, 6.2), dpi=140)
+
+    # Brasil — poder de compra (IPCA)
+    if "CDI (poder de compra)" in df_dca_macro.columns:
+        ax.plot(
+            df_dca_macro.index,
+            df_dca_macro["CDI (poder de compra)"],
+            label="CDI (poder de compra, IPCA mensal)",
+            color=COL_PP,
+            linewidth=2.2,
+            linestyle="--",
+        )
+    if "CDI (poder de compra anual)" in df_dca_macro.columns:
+        ax.plot(
+            df_dca_macro.index,
+            df_dca_macro["CDI (poder de compra anual)"],
+            label="CDI (poder de compra, IPCA anual)",
+            color=COL_PP,
+            linewidth=2.2,
+            linestyle=":",
+        )
+
+    # Exterior — USD real (CPI) e FED real (CPI)
+    if "USD real (CPI)" in df_dca_macro.columns:
+        ax.plot(
+            df_dca_macro.index,
+            df_dca_macro["USD real (CPI)"],
+            label="USD (poder de compra, CPI)",
+            color=COL_USD,
+            linewidth=2.0,
+            linestyle="--",
+            alpha=0.95,
+        )
+    if "FED real (CPI)" in df_dca_macro.columns:
+        ax.plot(
+            df_dca_macro.index,
+            df_dca_macro["FED real (CPI)"],
+            label="USD + juros FED (poder de compra, CPI)",
+            color=COL_FED,
+            linewidth=2.0,
+            linestyle=":",
+            alpha=0.95,
+        )
+
+    # Opcional: mostrar índices (base 1.0) se existirem
+    if "IPCA_INDEX (base 1)" in df_dca_macro.columns:
+        ax.plot(
+            df_dca_macro.index,
+            df_dca_macro["IPCA_INDEX (base 1)"],
+            label="Índice IPCA (base 1.0)",
+            color="white",
+            linewidth=1.4,
+            alpha=0.35,
+        )
+    if "CPI_INDEX (base 1)" in df_dca_macro.columns:
+        ax.plot(
+            df_dca_macro.index,
+            df_dca_macro["CPI_INDEX (base 1)"],
+            label="Índice CPI (base 1.0)",
+            color="white",
+            linewidth=1.4,
+            alpha=0.22,
+            linestyle="--",
+        )
+
+    ax.set_title(titulo, pad=14)
+    ax.set_xlabel("Data")
+    ax.set_ylabel(f"Valores / poder de compra ({unidade})")
     ax.grid(True, alpha=0.22)
     ax.legend(loc="upper left")
     fig.tight_layout()
@@ -1052,7 +1115,7 @@ with tab_dash:
                 col1, col2 = st.columns([3, 1.2], gap="large")
                 with col1:
                     titulo = f"DCA Mensal — Brasil ({modo_br}) • BTC vs CDI vs USD ({anos_plot} anos)"
-                    fig = _plot_dca_figure(df_dca_br, unidade_br, titulo)
+                    fig = _plot_invest_figure(df_dca_br, unidade_br, titulo)
                     st.pyplot(fig, use_container_width=True)
 
                     pdf_buffer = io.BytesIO()
@@ -1064,6 +1127,37 @@ with tab_dash:
                         file_name=f"dca_brasil_{modo_br.replace(' ', '_').lower()}_{anos_plot}anos.pdf",
                         mime="application/pdf",
                     )
+                    # --- Gráfico Macro (IPCA / Poder de compra) ---
+                    show_macro_br = ("CDI (poder de compra)" in df_dca_br.columns) or ("CDI (poder de compra anual)" in df_dca_br.columns)
+                    if show_macro_br:
+                        st.markdown("#### Cenários macro — Brasil (IPCA)")
+                        df_macro_br_plot = pd.DataFrame(index=df_dca_br.index)
+                        if "CDI (poder de compra)" in df_dca_br.columns:
+                            df_macro_br_plot["CDI (poder de compra)"] = df_dca_br["CDI (poder de compra)"]
+                        if "CDI (poder de compra anual)" in df_dca_br.columns:
+                            df_macro_br_plot["CDI (poder de compra anual)"] = df_dca_br["CDI (poder de compra anual)"]
+                        try:
+                            df_macro_br_plot["IPCA_INDEX (base 1)"] = df_macro.loc[df_m_plot.index, "IPCA_INDEX"].astype(float).values
+                        except Exception:
+                            pass
+
+                        fig_macro_br = _plot_macro_figure(
+                            df_macro_br_plot,
+                            "R$ (poder de compra)",
+                            "Poder de compra em BRL — CDI vs IPCA (mensal e anual)"
+                        )
+                        st.pyplot(fig_macro_br, use_container_width=True)
+
+                        pdf_buffer2 = io.BytesIO()
+                        fig_macro_br.savefig(pdf_buffer2, format="pdf", bbox_inches="tight")
+                        pdf_buffer2.seek(0)
+                        st.download_button(
+                            label="📄 Exportar gráfico macro (Brasil) em PDF",
+                            data=pdf_buffer2,
+                            file_name=f"dca_brasil_macro_ipca_{anos_plot}anos.pdf",
+                            mime="application/pdf",
+                        )
+
 
                 with col2:
                     st.subheader("Resumo\n(Brasil)")
@@ -1112,7 +1206,7 @@ with tab_dash:
                     titulo = f"DCA Mensal — Exterior ({modo_ex}) • BTC vs CDI(USD) vs USD ({anos_plot} anos)"
                     if toggle_fed:
                         titulo += " + benchmark FED"
-                    fig = _plot_dca_figure(df_dca_ex, unidade_ex, titulo)
+                    fig = _plot_invest_figure(df_dca_ex, unidade_ex, titulo)
                     st.pyplot(fig, use_container_width=True)
 
                     pdf_buffer = io.BytesIO()
@@ -1124,6 +1218,40 @@ with tab_dash:
                         file_name=f"dca_exterior_{modo_ex.replace(' ', '_').lower()}_{anos_plot}anos.pdf",
                         mime="application/pdf",
                     )
+                    # --- Gráfico Macro (CPI / Poder de compra em USD) ---
+                    st.markdown("#### Cenários macro — Exterior (CPI)")
+                    try:
+                        df_prices_ex_real, unidade_ex_real, _ = build_prices(df_m_plot, df_macro, "USD real (CPI)", include_fed=toggle_fed)
+                        df_dca_ex_real = calc_dca(df_prices_ex_real, aporte_ex_base)
+
+                        df_macro_ex_plot = pd.DataFrame(index=df_dca_ex_real.index)
+                        df_macro_ex_plot["USD real (CPI)"] = df_dca_ex_real["USD"]
+                        if "FED (USD+juros)" in df_dca_ex_real.columns:
+                            df_macro_ex_plot["FED real (CPI)"] = df_dca_ex_real["FED (USD+juros)"]
+                        try:
+                            df_macro_ex_plot["CPI_INDEX (base 1)"] = df_macro.loc[df_m_plot.index, "CPI_INDEX"].astype(float).values
+                        except Exception:
+                            pass
+
+                        fig_macro_ex = _plot_macro_figure(
+                            df_macro_ex_plot,
+                            unidade_ex_real,
+                            "Poder de compra em USD — USD vs FED (CPI)"
+                        )
+                        st.pyplot(fig_macro_ex, use_container_width=True)
+
+                        pdf_buffer2 = io.BytesIO()
+                        fig_macro_ex.savefig(pdf_buffer2, format="pdf", bbox_inches="tight")
+                        pdf_buffer2.seek(0)
+                        st.download_button(
+                            label="📄 Exportar gráfico macro (Exterior) em PDF",
+                            data=pdf_buffer2,
+                            file_name=f"dca_exterior_macro_cpi_{anos_plot}anos.pdf",
+                            mime="application/pdf",
+                        )
+                    except Exception:
+                        st.info("Não foi possível gerar o gráfico macro do Exterior (CPI) com as configurações atuais.")
+
 
                 with col2:
                     st.subheader("Resumo\n(Exterior)")
@@ -1174,7 +1302,7 @@ with tab_dash:
                 titulo = f"DCA Mensal — BTC vs CDI vs USD ({modo_plot}) • {anos_plot} anos"
                 if toggle_fed:
                     titulo += " + benchmark FED"
-                fig = _plot_dca_figure(df_dca_plot, unidade_plot, titulo)
+                fig = _plot_invest_figure(df_dca_plot, unidade_plot, titulo)
                 st.pyplot(fig, use_container_width=True)
 
                 pdf_buffer = io.BytesIO()
@@ -1186,6 +1314,85 @@ with tab_dash:
                     file_name=f"dca_btc_cdi_usd_{modo_plot.replace(' ', '_').lower()}_{anos_plot}anos.pdf",
                     mime="application/pdf",
                 )
+                # =========================
+                # Segundo gráfico: Cenários Macro (IPCA/CPI)
+                # =========================
+                st.markdown("### Cenários macro (inflação e poder de compra)")
+                tab_m_br, tab_m_us = st.tabs(["🇧🇷 Brasil (IPCA)", "🌎 Exterior (CPI)"])
+
+                with tab_m_br:
+                    show_macro_br = ("CDI (poder de compra)" in df_dca_plot.columns) or ("CDI (poder de compra anual)" in df_dca_plot.columns)
+                    if show_macro_br:
+                        df_macro_br_plot = pd.DataFrame(index=df_dca_plot.index)
+                        if "CDI (poder de compra)" in df_dca_plot.columns:
+                            df_macro_br_plot["CDI (poder de compra)"] = df_dca_plot["CDI (poder de compra)"]
+                        if "CDI (poder de compra anual)" in df_dca_plot.columns:
+                            df_macro_br_plot["CDI (poder de compra anual)"] = df_dca_plot["CDI (poder de compra anual)"]
+                        try:
+                            df_macro_br_plot["IPCA_INDEX (base 1)"] = df_macro.loc[df_m_plot.index, "IPCA_INDEX"].astype(float).values
+                        except Exception:
+                            pass
+
+                        fig_macro_br = _plot_macro_figure(
+                            df_macro_br_plot,
+                            "R$ (poder de compra)",
+                            "Poder de compra em BRL — CDI vs IPCA (mensal e anual)"
+                        )
+                        st.pyplot(fig_macro_br, use_container_width=True)
+
+                        pdf_buf_macro = io.BytesIO()
+                        fig_macro_br.savefig(pdf_buf_macro, format="pdf", bbox_inches="tight")
+                        pdf_buf_macro.seek(0)
+                        st.download_button(
+                            label="📄 Exportar gráfico macro (Brasil) em PDF",
+                            data=pdf_buf_macro,
+                            file_name=f"dca_macro_ipca_{modo_plot.replace(' ', '_').lower()}_{anos_plot}anos.pdf",
+                            mime="application/pdf",
+                        )
+                    else:
+                        st.info("Ative os toggles de IPCA/poder de compra para visualizar este cenário.")
+
+                with tab_m_us:
+                    try:
+                        df_prices_us_real, unidade_us_real, _ = build_prices(df_m_plot, df_macro, "USD real (CPI)", include_fed=toggle_fed)
+
+                        if moeda_base_plot.startswith("BRL") and converter_aporte_para_usd:
+                            aporte_us_real = aporte_series_usd_from_brl(df_m_plot, float(aporte_brl))
+                        elif moeda_base_plot.startswith("USD"):
+                            aporte_us_real = float(aporte_usd)
+                        else:
+                            aporte_us_real = aporte_series_usd_from_brl(df_m_plot, float(aporte_brl))
+
+                        df_dca_us_real = calc_dca(df_prices_us_real, aporte_us_real)
+
+                        df_macro_us_plot = pd.DataFrame(index=df_dca_us_real.index)
+                        df_macro_us_plot["USD real (CPI)"] = df_dca_us_real["USD"]
+                        if "FED (USD+juros)" in df_dca_us_real.columns:
+                            df_macro_us_plot["FED real (CPI)"] = df_dca_us_real["FED (USD+juros)"]
+                        try:
+                            df_macro_us_plot["CPI_INDEX (base 1)"] = df_macro.loc[df_m_plot.index, "CPI_INDEX"].astype(float).values
+                        except Exception:
+                            pass
+
+                        fig_macro_us = _plot_macro_figure(
+                            df_macro_us_plot,
+                            unidade_us_real,
+                            "Poder de compra em USD — USD vs FED (CPI)"
+                        )
+                        st.pyplot(fig_macro_us, use_container_width=True)
+
+                        pdf_buf_macro2 = io.BytesIO()
+                        fig_macro_us.savefig(pdf_buf_macro2, format="pdf", bbox_inches="tight")
+                        pdf_buf_macro2.seek(0)
+                        st.download_button(
+                            label="📄 Exportar gráfico macro (Exterior) em PDF",
+                            data=pdf_buf_macro2,
+                            file_name=f"dca_macro_cpi_{anos_plot}anos.pdf",
+                            mime="application/pdf",
+                        )
+                    except Exception:
+                        st.info("Não foi possível gerar o gráfico macro do Exterior (CPI). Verifique a FRED_API_KEY.")
+
 
             with col2:
                 st.subheader("Resumo\n(período selecionado)")
