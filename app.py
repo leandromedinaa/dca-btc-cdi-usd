@@ -25,6 +25,7 @@ COL_BTC = "#F7931A"   # Bitcoin orange
 COL_USD = "#00C853"   # Green
 COL_CDI = "#2979FF"   # Institutional blue
 COL_FED = "#FF5252"   # Red accent for benchmark
+COL_PP  = "#B0BEC5"   # Gray/steel for purchasing power line
 
 NEON_CYAN = "#00E5FF"
 NEON_PURPLE = "#7C4DFF"
@@ -638,6 +639,26 @@ def build_prices(
     raise ValueError(f"Base desconhecida: {base}")
 
 
+def cdi_poder_compra_brl(df_m: pd.DataFrame, df_macro: pd.DataFrame, aporte_brl) -> pd.Series:
+    """
+    Simula aporte mensal em CDI (nominal BRL) e deflaciona pelo IPCA_INDEX,
+    aproximando o "poder de compra" do patrimônio ao longo do tempo.
+    
+    - CDI é tratado como índice/serie acumulada mensal (BRL nominal)
+    - Resultado final = (carteira em CDI nominal) / IPCA_INDEX
+    """
+    if df_m.empty:
+        return pd.Series(dtype=float)
+    idx = df_m.index
+    if "CDI" not in df_m.columns:
+        return pd.Series(index=idx, dtype=float)
+    cdi = df_m["CDI"].reindex(idx).ffill()
+    ipca = df_macro["IPCA_INDEX"].reindex(idx).ffill().bfill()
+    carteira_nominal = simular_dca(cdi, aporte_brl)
+    carteira_real = carteira_nominal / ipca
+    return carteira_real
+
+
 def _plot_dca_figure(df_dca: pd.DataFrame, unidade: str, titulo: str):
     fig, ax = plt.subplots(figsize=(16, 7), dpi=140)
 
@@ -647,6 +668,15 @@ def _plot_dca_figure(df_dca: pd.DataFrame, unidade: str, titulo: str):
         ax.plot(df_dca.index, df_dca["USD"], label="USD (DCA)", color=COL_USD, linewidth=2.3)
     if "CDI" in df_dca.columns:
         ax.plot(df_dca.index, df_dca["CDI"], label="CDI (DCA)", color=COL_CDI, linewidth=2.3)
+    if "CDI (poder de compra)" in df_dca.columns:
+        ax.plot(
+            df_dca.index,
+            df_dca["CDI (poder de compra)"],
+            label="CDI (poder de compra, IPCA)",
+            color=COL_PP,
+            linewidth=2.1,
+            linestyle="--",
+        )
     if "FED (USD+juros)" in df_dca.columns:
         ax.plot(df_dca.index, df_dca["FED (USD+juros)"], label="USD + juros FED (DCA)", color=COL_FED, linewidth=2.2)
 
@@ -720,6 +750,9 @@ with tab_dash:
                 base_br = "BRL real (IPCA)" if toggle_brl_real else "BRL nominal"
                 df_prices_br, unidade_br, modo_br = build_prices(df_m_plot, df_macro, base_br, include_fed=False)
                 df_dca_br = calc_dca(df_prices_br, float(aporte_brl))
+                # Linha extra: CDI (aporte + juros) deflacionado pelo IPCA (poder de compra)
+                if base_br.startswith("BRL"):
+                    df_dca_br["CDI (poder de compra)"] = cdi_poder_compra_brl(df_m_plot, df_macro, float(aporte_brl))
 
                 col1, col2 = st.columns([3, 1.2], gap="large")
                 with col1:
@@ -817,6 +850,9 @@ with tab_dash:
                 aporte_plot_base = float(aporte)
 
             df_dca_plot = calc_dca(df_prices_plot, aporte_plot_base)
+            # Linha extra: CDI (aporte + juros) deflacionado pelo IPCA (poder de compra) — somente para bases BRL
+            if moeda_base.startswith("BRL"):
+                df_dca_plot["CDI (poder de compra)"] = cdi_poder_compra_brl(df_m_plot, df_macro, float(aporte))
             resultado_plot = resumo_dca(df_dca_plot, aporte_plot_base)
 
             # Layout principal
