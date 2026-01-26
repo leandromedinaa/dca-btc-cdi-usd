@@ -63,7 +63,6 @@ st.set_page_config(
     page_title=f"{BRAND_NAME} — DCA BTC x CDI x USD",
     page_icon=LOGO_PATH,
     layout="wide",
-    initial_sidebar_state="collapsed",
 )
 
 # =========================
@@ -399,19 +398,6 @@ div[data-testid="stAlert"] {{
   font-size: 12px;
 }}
 .lm-muted {{ color: var(--muted) !important; font-size: 13px; }}
-
-/* ===== Mobile tweaks ===== */
-@media (max-width: 768px) {{
-  .block-container {{ padding-left: 0.8rem !important; padding-right: 0.8rem !important; }}
-  [data-testid="stSidebar"] {{ width: 86vw !important; }}
-  .stButton button, .stDownloadButton button {{
-    padding: 14px 14px !important;
-    font-size: 16px !important;
-    border-radius: 16px !important;
-  }}
-  .stTabs [data-baseweb="tab"] {{ padding: 12px 14px !important; font-size: 15px !important; }}
-}}
-
 </style>
         """,
         unsafe_allow_html=True,
@@ -471,33 +457,7 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# =========================
-# QUICK MENU (MOBILE FRIENDLY)
-# =========================
-if "active_view" not in st.session_state:
-    # invest = mostra só investimento puro; macro = mostra só gráficos macro; both = mostra tudo
-    st.session_state.active_view = "invest"
 
-with st.container(border=True):
-    st.markdown("### ⚡ Menu rápido (mobile)")
-    c1, c2, c3, c4 = st.columns(4, gap="small")
-    with c1:
-        if st.button("📈 Invest.", use_container_width=True, key="qm_invest"):
-            st.session_state.active_view = "invest"
-    with c2:
-        if st.button("🌍 Macro", use_container_width=True, key="qm_macro"):
-            st.session_state.active_view = "macro"
-    with c3:
-        if st.button("🧩 Ambos", use_container_width=True, key="qm_both"):
-            st.session_state.active_view = "both"
-    with c4:
-        if st.button("🧹 Cache", use_container_width=True, key="qm_cache"):
-            st.cache_data.clear()
-            st.toast("Cache limpo. Recarregando...", icon="🧹")
-            st.rerun()
-
-show_invest = st.session_state.active_view in ("invest", "both")
-show_macro = st.session_state.active_view in ("macro", "both")
 
 # =========================
 # UTIL: FRED API KEY
@@ -1235,24 +1195,21 @@ with tab_dash:
 
                 col1, col2 = st.columns([3, 1.2], gap="large")
                 with col1:
-                    if not show_invest:
-                        st.info("Mostrando apenas modo Macro. Use o Menu rápido para alternar.", icon="🌍")
-                    if show_invest:
-                        titulo = f"DCA Mensal — Brasil ({modo_br}) • BTC vs CDI vs USD ({anos_plot} anos)"
-                        fig = _plot_invest_figure(df_dca_br, unidade_br, titulo)
-                        st.pyplot(fig, use_container_width=True)
-                        
-                        pdf_buffer = io.BytesIO()
-                        fig.savefig(pdf_buffer, format="pdf", bbox_inches="tight")
-                        pdf_buffer.seek(0)
-                        st.download_button(
-                            label="📄 Exportar gráfico (Brasil) em PDF",
-                            data=pdf_buffer,
-                            file_name=f"dca_brasil_{modo_br.replace(' ', '_').lower()}_{anos_plot}anos.pdf",
-                            mime="application/pdf",
-                        )
+                    titulo = f"DCA Mensal — Brasil ({modo_br}) • BTC vs CDI vs USD ({anos_plot} anos)"
+                    fig = _plot_invest_figure(df_dca_br, unidade_br, titulo)
+                    st.pyplot(fig, use_container_width=True)
+
+                    pdf_buffer = io.BytesIO()
+                    fig.savefig(pdf_buffer, format="pdf", bbox_inches="tight")
+                    pdf_buffer.seek(0)
+                    st.download_button(
+                        label="📄 Exportar gráfico (Brasil) em PDF",
+                        data=pdf_buffer,
+                        file_name=f"dca_brasil_{modo_br.replace(' ', '_').lower()}_{anos_plot}anos.pdf",
+                        mime="application/pdf",
+                    )
                     # --- Gráfico Macro (IPCA / Poder de compra) ---
-                    show_macro_br = show_macro and (("CDI (poder de compra)" in df_dca_br.columns) or ("CDI (poder de compra anual)" in df_dca_br.columns))
+                    show_macro_br = ("CDI (poder de compra)" in df_dca_br.columns) or ("CDI (poder de compra anual)" in df_dca_br.columns)
                     if show_macro_br:
                         st.markdown("#### Cenários macro — Brasil (IPCA)")
                         df_macro_br_plot = pd.DataFrame(index=df_dca_br.index)
@@ -1327,60 +1284,54 @@ with tab_dash:
 
                 col1, col2 = st.columns([3, 1.2], gap="large")
                 with col1:
-                    if not show_invest:
-                        st.info("Mostrando apenas modo Macro. Use o Menu rápido para alternar.", icon="🌍")
-                    if show_invest:
-                        titulo = f"DCA Mensal — Exterior ({modo_ex}) • BTC vs CDI(USD) vs USD ({anos_plot} anos)"
-                        if toggle_fed:
-                            titulo += " + benchmark FED"
-                        fig = _plot_invest_figure(df_dca_ex, unidade_ex, titulo)
-                        st.pyplot(fig, use_container_width=True)
-                        
-                        pdf_buffer = io.BytesIO()
-                        fig.savefig(pdf_buffer, format="pdf", bbox_inches="tight")
-                        pdf_buffer.seek(0)
+                    titulo = f"DCA Mensal — Exterior ({modo_ex}) • BTC vs CDI(USD) vs USD ({anos_plot} anos)"
+                    if toggle_fed:
+                        titulo += " + benchmark FED"
+                    fig = _plot_invest_figure(df_dca_ex, unidade_ex, titulo)
+                    st.pyplot(fig, use_container_width=True)
+
+                    pdf_buffer = io.BytesIO()
+                    fig.savefig(pdf_buffer, format="pdf", bbox_inches="tight")
+                    pdf_buffer.seek(0)
+                    st.download_button(
+                        label="📄 Exportar gráfico (Exterior) em PDF",
+                        data=pdf_buffer,
+                        file_name=f"dca_exterior_{modo_ex.replace(' ', '_').lower()}_{anos_plot}anos.pdf",
+                        mime="application/pdf",
+                    )
+                    # --- Gráfico Macro (CPI / Poder de compra em USD) ---
+                    st.markdown("#### Cenários macro — Exterior (CPI)")
+                    try:
+                        df_prices_ex_real, unidade_ex_real, _ = build_prices(df_m_plot, df_macro, "USD real (CPI)", include_fed=toggle_fed)
+                        df_dca_ex_real = calc_dca(df_prices_ex_real, aporte_ex_base)
+
+                        df_macro_ex_plot = pd.DataFrame(index=df_dca_ex_real.index)
+                        df_macro_ex_plot["USD real (CPI)"] = df_dca_ex_real["USD"]
+                        if "FED (USD+juros)" in df_dca_ex_real.columns:
+                            df_macro_ex_plot["FED real (CPI)"] = df_dca_ex_real["FED (USD+juros)"]
+                        try:
+                            df_macro_ex_plot["CPI_INDEX (base 1)"] = df_macro.loc[df_m_plot.index, "CPI_INDEX"].astype(float).values
+                        except Exception:
+                            pass
+
+                        fig_macro_ex = _plot_macro_figure(
+                            df_macro_ex_plot,
+                            unidade_ex_real,
+                            "Poder de compra em USD — USD vs FED (CPI)"
+                        )
+                        st.pyplot(fig_macro_ex, use_container_width=True)
+
+                        pdf_buffer2 = io.BytesIO()
+                        fig_macro_ex.savefig(pdf_buffer2, format="pdf", bbox_inches="tight")
+                        pdf_buffer2.seek(0)
                         st.download_button(
-                            label="📄 Exportar gráfico (Exterior) em PDF",
-                            data=pdf_buffer,
-                            file_name=f"dca_exterior_{modo_ex.replace(' ', '_').lower()}_{anos_plot}anos.pdf",
+                            label="📄 Exportar gráfico macro (Exterior) em PDF",
+                            data=pdf_buffer2,
+                            file_name=f"dca_exterior_macro_cpi_{anos_plot}anos.pdf",
                             mime="application/pdf",
                         )
-                                        # --- Gráfico Macro (CPI / Poder de compra em USD) ---
-                    if show_macro:
-                        st.markdown("#### Cenários macro — Exterior (CPI)")
-                        try:
-                            df_prices_ex_real, unidade_ex_real, _ = build_prices(df_m_plot, df_macro, "USD real (CPI)", include_fed=toggle_fed)
-                            df_dca_ex_real = calc_dca(df_prices_ex_real, aporte_ex_base)
-                        
-                            df_macro_ex_plot = pd.DataFrame(index=df_dca_ex_real.index)
-                            df_macro_ex_plot["USD real (CPI)"] = df_dca_ex_real["USD"]
-                            if "FED (USD+juros)" in df_dca_ex_real.columns:
-                                df_macro_ex_plot["FED real (CPI)"] = df_dca_ex_real["FED (USD+juros)"]
-                            try:
-                                df_macro_ex_plot["CPI_INDEX (base 1)"] = df_macro.loc[df_m_plot.index, "CPI_INDEX"].astype(float).values
-                            except Exception:
-                                pass
-                        
-                            fig_macro_ex = _plot_macro_figure(
-                                df_macro_ex_plot,
-                                unidade_ex_real,
-                                "Poder de compra em USD — USD vs FED (CPI)"
-                            )
-                            st.pyplot(fig_macro_ex, use_container_width=True)
-                        
-                            pdf_buffer2 = io.BytesIO()
-                            fig_macro_ex.savefig(pdf_buffer2, format="pdf", bbox_inches="tight")
-                            pdf_buffer2.seek(0)
-                            st.download_button(
-                                label="📄 Exportar gráfico macro (Exterior) em PDF",
-                                data=pdf_buffer2,
-                                file_name=f"dca_exterior_macro_cpi_{anos_plot}anos.pdf",
-                                mime="application/pdf",
-                            )
-                        except Exception:
-                            st.info("Não foi possível gerar o gráfico macro do Exterior (CPI) com as configurações atuais.")
-                    else:
-                        st.caption("Macro (Exterior) oculto — selecione \"🌍 Macro\" ou \"🧩 Ambos\" no Menu rápido.")
+                    except Exception:
+                        st.info("Não foi possível gerar o gráfico macro do Exterior (CPI) com as configurações atuais.")
 
 
                 with col2:
