@@ -281,6 +281,7 @@ def portfolio_dca(
     aporte: float | pd.Series,
     weights: dict[str, float],
     rebalance: str = "Nunca",
+    valor_inicial: float = 0.0,
 ) -> pd.Series:
     cols = [c for c in df_prices.columns if c in weights and weights[c] > 0]
     if not cols:
@@ -292,6 +293,13 @@ def portfolio_dca(
     # Shares per asset
     shares = np.zeros(len(cols), dtype=float)
     values = []
+
+    # aplica valor inicial como compra no primeiro ponto (lump sum) proporcional aos pesos
+    if float(valor_inicial) > 0:
+        p0 = df_prices.loc[df_prices.index[0], cols].astype(float).values
+        buy0 = (float(valor_inicial) * w) / p0
+        buy0 = np.where(np.isfinite(buy0), buy0, 0.0)
+        shares += buy0
 
     # rebalance schedule
     def should_rebalance(ts: pd.Timestamp) -> bool:
@@ -701,12 +709,7 @@ with tab_port:
     df_prices_port = df_prices.copy()
     # Keep only columns present
     weights = {k: float(v) for k, v in weights.items() if k in df_prices_port.columns}
-
-    port_series = portfolio_dca(df_prices_port, float(aporte), weights, rebalance=rebalance)
-    if float(valor_inicial) > 0:
-        # aplica valor inicial no primeiro ponto proporcional aos pesos
-        first_idx = port_series.index[0]
-        port_series.loc[first_idx:] += float(valor_inicial)
+    port_series = portfolio_dca(df_prices_port, float(aporte), weights, rebalance=rebalance, valor_inicial=float(valor_inicial))
 
 
     colp1, colp2 = st.columns([3.2, 1.2], gap="large")
