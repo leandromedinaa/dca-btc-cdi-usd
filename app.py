@@ -146,6 +146,102 @@ def baixar_fedfunds_fred(start_iso: str, end_iso: str) -> pd.DataFrame:
         return pd.DataFrame(columns=["FEDFUNDS"])
     return _fred_request_observations("FEDFUNDS", start_iso, end_iso, api_key)
 
+# ---------------------------
+# CoinGecko (crypto universe)
+# ---------------------------
+COINGECKO_BASE = "https://api.coingecko.com/api/v3"
+
+# Lista "pronta" (ids oficiais do CoinGecko)
+COINGECKO_PRESETS = {
+    "Bitcoin (BTC)": "bitcoin",
+    "Ethereum (ETH)": "ethereum",
+    "Solana (SOL)": "solana",
+    "Chainlink (LINK)": "chainlink",
+    "Avalanche (AVAX)": "avalanche-2",
+    "Polygon (MATIC)": "matic-network",
+    "Aave (AAVE)": "aave",
+    "Lido (LDO)": "lido-dao",
+    "Ondo (ONDO)": "ondo-finance",
+}
+
+@st.cache_data(ttl=60 * 60)
+def cg_ping() -> bool:
+    try:
+        r = requests.get(f"{COINGECKO_BASE}/ping", timeout=20)
+        return r.ok
+    except Exception:
+        return False
+
+@st.cache_data(ttl=30 * 60)
+def cg_global() -> dict:
+    r = requests.get(f"{COINGECKO_BASE}/global", timeout=30)
+    r.raise_for_status()
+    return r.json().get("data", {})
+
+@st.cache_data(ttl=15 * 60)
+def cg_markets(vs_currency: str = "usd", per_page: int = 50, page: int = 1) -> pd.DataFrame:
+    params = {
+        "vs_currency": vs_currency,
+        "order": "market_cap_desc",
+        "per_page": per_page,
+        "page": page,
+        "sparkline": "false",
+        "price_change_percentage": "24h,7d",
+    }
+    r = requests.get(f"{COINGECKO_BASE}/coins/markets", params=params, timeout=30)
+    r.raise_for_status()
+    df = pd.DataFrame(r.json())
+    if df.empty:
+        return df
+    keep = [
+        "id","symbol","name","current_price","market_cap","total_volume",
+        "price_change_percentage_24h","price_change_percentage_7d_in_currency",
+    ]
+    return df[[c for c in keep if c in df.columns]]
+
+@st.cache_data(ttl=30 * 60)
+def cg_search(query: str) -> pd.DataFrame:
+    r = requests.get(f"{COINGECKO_BASE}/search", params={"query": query}, timeout=30)
+    r.raise_for_status()
+    coins = r.json().get("coins", [])
+    df = pd.DataFrame(coins)
+    if df.empty:
+        return df
+    keep = ["id","name","symbol","market_cap_rank"]
+    return df[[c for c in keep if c in df.columns]]
+
+@st.cache_data(ttl=60 * 60)
+def cg_market_chart_range(coin_id: str, vs_currency: str, start_ts: int, end_ts: int) -> pd.Series:
+    url = f"{COINGECKO_BASE}/coins/{coin_id}/market_chart/range"
+    params = {"vs_currency": vs_currency, "from": start_ts, "to": end_ts}
+    r = requests.get(url, params=params, timeout=45)
+    r.raise_for_status()
+    prices = r.json().get("prices", [])
+    if not prices:
+        return pd.Series(dtype=float)
+    s = pd.Series({pd.to_datetime(int(t), unit="ms"): float(v) for t, v in prices}).sort_index()
+    s = s[~s.index.duplicated(keep="last")]
+    return s
+
+@st.cache_data(ttl=60 * 60)
+def cg_monthly_close_usd(coin_id: str, start_dt: dt.date, end_dt: dt.date) -> pd.Series:
+    start_ts = int(dt.datetime.combine(start_dt, dt.time.min).timestamp())
+    end_ts = int(dt.datetime.combine(end_dt, dt.time.max).timestamp())
+    daily = cg_market_chart_range(coin_id, "usd", start_ts, end_ts)
+    if daily.empty:
+        return pd.Series(dtype=float, name=coin_id)
+    m = daily.resample("ME").last().ffill()
+    m.name = coin_id
+    return m
+
+@st.cache_data(ttl=15 * 60)
+def cg_simple_price(coin_id: str, vs_currencies=("usd","brl")) -> dict:
+    params = {"ids": coin_id, "vs_currencies": ",".join(vs_currencies), "include_24hr_change": "true"}
+    r = requests.get(f"{COINGECKO_BASE}/simple/price", params=params, timeout=30)
+    r.raise_for_status()
+    return r.json().get(coin_id, {})
+
+
 # ============================================================
 # TRANSFORMS
 # ============================================================
@@ -254,14 +350,20 @@ def simular_dca(precos: pd.Series, aportes: float | pd.Series, valor_inicial: fl
     cotas = 0.0
     initialized = False
     valores = []
+    last_val = 0.0
     for dt0, p in precos.items():
+        p = float(p) if pd.notna(p) else float('nan')
         if (not initialized) and valor_inicial > 0 and p > 0:
             cotas += float(valor_inicial) / p
             initialized = True
         a = float(ap.loc[dt0])
         if p > 0 and a > 0:
             cotas += a / p
-        valores.append(cotas * p)
+        if not np.isfinite(p) or p <= 0:
+            valores.append(last_val)
+            continue
+        last_val = cotas * p
+        valores.append(last_val)
     return pd.Series(valores, index=precos.index)
 
 def calc_dca(df_prices: pd.DataFrame, aporte: float | pd.Series, valor_inicial: float = 0.0) -> pd.DataFrame:
@@ -513,6 +615,11 @@ with st.sidebar:
 
     include_fed = st.checkbox("Mostrar benchmark USD + juros FED", value=True)
     st.caption("Para CPI/FED: defina FRED_API_KEY (Secrets ou env).")
+    st.divider()
+    st.header("CoinGecko")
+    cg_on = st.checkbox("Ativar CoinGecko (altcoins / visão do mercado)", value=True)
+    cg_coins = st.multiselect("Criptos para comparar (CoinGecko)", options=list(COINGECKO_PRESETS.keys()), default=[])
+    cg_custom = st.text_input("Coin ID custom (opcional, ex: pepe, render-token)", value="")
 
     st.divider()
     st.subheader("Carteira (pesos)")
@@ -568,7 +675,7 @@ if auto_refresh:
 st.title(APP_TITLE)
 st.caption("Research & simulações de investimento • Web3 • Dados reais")
 
-tab_dash, tab_port, tab_met = st.tabs(["📊 Dashboard", "🧺 Carteira", "ℹ️ Metodologia"])
+tab_dash, tab_port, tab_cg, tab_met = st.tabs(["📊 Dashboard", "🧺 Carteira", "🪙 CoinGecko", "ℹ️ Metodologia"])
 
 # ============================================================
 # Seleção do período (após sidebar)
@@ -618,6 +725,48 @@ with tab_dash:
     c1, c2 = st.columns([3.2, 1.2], gap="large")
 
     df_prices, unit = build_prices(df_m, df_macro, base, include_fed=include_fed)
+    # --- CoinGecko: adiciona altcoins (mensal) como linhas extras no comparativo ---
+    if cg_on and cg_coins:
+        try:
+            start_d = df_m.index.min().date()
+            end_d = df_m.index.max().date()
+            for label in cg_coins:
+                coin_id = COINGECKO_PRESETS.get(label)
+                if not coin_id:
+                    continue
+                s_usd = cg_monthly_close_usd(coin_id, start_d, end_d).reindex(df_m.index)
+                # converte para base escolhida
+                name = label.split(" (")[0]
+                if base.startswith("BRL"):
+                    s = (s_usd * df_m["USD_BRL"]).rename(name)
+                    if base == "BRL real (IPCA)":
+                        s = s / df_macro["IPCA_INDEX"]
+                else:
+                    s = s_usd.rename(name)
+                    if base == "USD real (CPI)":
+                        s = s / df_macro["CPI_INDEX"]
+                df_prices[s.name] = s
+        except Exception as e:
+            st.warning(f"CoinGecko indisponível no momento: {e}")
+
+    if cg_on and cg_custom.strip():
+        try:
+            start_d = df_m.index.min().date()
+            end_d = df_m.index.max().date()
+            cid = cg_custom.strip().lower()
+            s_usd = cg_monthly_close_usd(cid, start_d, end_d).reindex(df_m.index)
+            if not s_usd.empty:
+                if base.startswith("BRL"):
+                    s = (s_usd * df_m["USD_BRL"]).rename(cid.upper())
+                    if base == "BRL real (IPCA)":
+                        s = s / df_macro["IPCA_INDEX"]
+                else:
+                    s = s_usd.rename(cid.upper())
+                    if base == "USD real (CPI)":
+                        s = s / df_macro["CPI_INDEX"]
+                df_prices[s.name] = s
+        except Exception as e:
+            st.warning(f"CoinGecko (coin id '{cg_custom}') falhou: {e}")
 
     dca_df = calc_dca(df_prices, float(aporte), float(valor_inicial))
     aporte_line = (linha_aportes(dca_df.index, float(aporte)) + float(valor_inicial)) if show_aporte_line else None
@@ -702,6 +851,7 @@ with tab_dash:
 # ============================================================
 with tab_port:
     st.subheader("Simulador de Carteira (DCA + Rebalanceamento)")
+    st.caption("Obs.: Altcoins via CoinGecko entram no comparativo do Dashboard. A carteira, por enquanto, usa apenas BTC/CDI/USD.")
 
     weights = {"BTC": w_btc, "CDI": w_cdi, "USD": w_usd}
     # portfolio uses whatever is in df_prices; ensure USD exists in USD-base too
@@ -752,6 +902,95 @@ with tab_port:
 # ============================================================
 # Metodologia
 # ============================================================
+
+# ============================================================
+# CoinGecko — visão macro do mercado cripto
+# ============================================================
+with tab_cg:
+    st.subheader("CoinGecko — Market Overview")
+    if not cg_on:
+        st.info("Ative o CoinGecko na sidebar para usar estas funções.")
+    else:
+        ok = cg_ping()
+        if not ok:
+            st.warning("CoinGecko não respondeu agora. Tente novamente em instantes.")
+        else:
+            g = cg_global()
+            c1, c2, c3, c4 = st.columns(4)
+            try:
+                total_mcap_usd = float(g.get("total_market_cap", {}).get("usd", 0.0))
+                total_vol_usd = float(g.get("total_volume", {}).get("usd", 0.0))
+                btc_dom = float(g.get("market_cap_percentage", {}).get("btc", 0.0))
+                eth_dom = float(g.get("market_cap_percentage", {}).get("eth", 0.0))
+                c1.metric("Market Cap (USD)", f"${total_mcap_usd:,.0f}")
+                c2.metric("Volume 24h (USD)", f"${total_vol_usd:,.0f}")
+                c3.metric("Dominância BTC", f"{btc_dom:.2f}%")
+                c4.metric("Dominância ETH", f"{eth_dom:.2f}%")
+            except Exception:
+                st.caption("Dados globais indisponíveis.")
+
+            st.divider()
+            left, right = st.columns([1.3, 1], gap="large")
+
+            with left:
+                st.markdown("#### Top por Market Cap")
+                vs = st.selectbox("Moeda", ["usd", "brl"], index=0, key="cg_vs")
+                topn = st.slider("Quantidade", 10, 100, 25, 5, key="cg_topn")
+                dfm = cg_markets(vs_currency=vs, per_page=int(topn), page=1)
+                if dfm.empty:
+                    st.info("Sem dados agora.")
+                else:
+                    df_show = dfm.copy()
+                    df_show["current_price"] = df_show["current_price"].map(lambda x: f"{x:,.6f}")
+                    df_show["market_cap"] = df_show["market_cap"].map(lambda x: f"{x:,.0f}")
+                    df_show["total_volume"] = df_show["total_volume"].map(lambda x: f"{x:,.0f}")
+                    st.dataframe(
+                        df_show.rename(
+                            columns={
+                                "symbol": "ticker",
+                                "name": "nome",
+                                "current_price": "preço",
+                                "market_cap": "market cap",
+                                "total_volume": "volume",
+                                "price_change_percentage_24h": "24h%",
+                                "price_change_percentage_7d_in_currency": "7d%",
+                            }
+                        ),
+                        use_container_width=True,
+                        height=520,
+                    )
+
+            with right:
+                st.markdown("#### Buscar moeda")
+                q = st.text_input("Nome/ID/símbolo", value="ethereum", key="cg_query")
+                if q.strip():
+                    sres = cg_search(q.strip())
+                    if sres.empty:
+                        st.info("Nada encontrado.")
+                    else:
+                        pick = st.selectbox("Resultados", sres["id"].head(10).tolist(), key="cg_pick")
+                        sp = cg_simple_price(pick, vs_currencies=("usd", "brl"))
+                        usd = sp.get("usd", None)
+                        brl = sp.get("brl", None)
+                        ch = sp.get("usd_24h_change", None)
+                        st.metric("Preço USD", f"${usd:,.6f}" if usd is not None else "—", f"{ch:.2f}%" if ch is not None else None)
+                        st.metric("Preço BRL", f"R$ {brl:,.6f}" if brl is not None else "—")
+                        try:
+                            end_d = dt.date.today()
+                            start_d = end_d - dt.timedelta(days=30)
+                            start_ts = int(dt.datetime.combine(start_d, dt.time.min).timestamp())
+                            end_ts = int(dt.datetime.combine(end_d, dt.time.max).timestamp())
+                            daily = cg_market_chart_range(pick, "usd", start_ts, end_ts)
+                            if not daily.empty:
+                                fig, ax = plt.subplots(figsize=(6.2, 3.2), dpi=140)
+                                ax.plot(daily.index, daily.values)
+                                ax.set_title(f"{pick} — últimos 30 dias (USD)")
+                                ax.grid(True, alpha=0.25)
+                                fig.tight_layout()
+                                st.pyplot(fig, use_container_width=True)
+                        except Exception:
+                            pass
+
 with tab_met:
     st.markdown(
         """
