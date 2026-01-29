@@ -446,6 +446,39 @@ def export_excel(sheets: dict[str, pd.DataFrame]) -> bytes:
     buf.seek(0)
     return buf.read()
 
+
+@st.cache_data(ttl=60*60)
+def carregar_base():
+    """Carrega e prepara a base mensal completa (independente do período escolhido)."""
+    df_btc = baixar_btc_usd(3650)  # ~10y
+    br_ini = df_btc.index.min().strftime("%d/%m/%Y")
+    br_fim = df_btc.index.max().strftime("%d/%m/%Y")
+    start_iso = df_btc.index.min().strftime("%Y-%m-%d")
+    end_iso = df_btc.index.max().strftime("%Y-%m-%d")
+
+    df_usd = baixar_usd_brl(br_ini, br_fim)
+    df_cdi = baixar_cdi(br_ini, br_fim)
+
+    df_all = df_btc.join(df_usd, how="inner").join(df_cdi, how="inner")
+    df_all["BTC_BRL"] = df_all["BTC_USD"] * df_all["USD_BRL"]
+    df_all = df_all[["BTC_USD", "BTC_BRL", "USD_BRL", "CDI"]].dropna()
+
+    df_m_full = to_month_end(df_all).dropna()
+    if len(df_m_full) < 24:
+        raise RuntimeError("Base mensal muito curta. Não há dados suficientes para simular.")
+
+    df_macro_full = build_macro(df_m_full, br_ini, br_fim, start_iso, end_iso)
+    return df_m_full, df_macro_full
+
+# ============================================================
+# Carrega base completa (antes da sidebar para datas min/max)
+# ============================================================
+try:
+    df_m_full, df_macro_full = carregar_base()
+except Exception as e:
+    st.error(f"Erro ao carregar dados: {e}")
+    st.stop()
+
 # ============================================================
 # UI — SIDEBAR
 # ============================================================
@@ -461,7 +494,11 @@ with st.sidebar:
 
     st.divider()
     st.header("Parâmetros")
-    anos_plot = st.slider("Período do gráfico (anos)", 1, 10, 6, 1)
+    modo_periodo = st.radio("Período da simulação", ["Últimos N anos", "Intervalo personalizado"], index=0)
+    anos_plot = st.slider("Últimos N anos", 1, 15, 6, 1, disabled=(modo_periodo!="Últimos N anos"))
+    # Campos de data são ajustados depois que a base é carregada (min/max reais)
+    data_inicio = st.date_input("Data inicial (personalizado)", value=dt.date.today(), disabled=(modo_periodo!="Intervalo personalizado"))
+    data_fim = st.date_input("Data final (personalizado)", value=dt.date.today(), disabled=(modo_periodo!="Intervalo personalizado"))
     aporte = st.number_input("Aporte mensal (base selecionada)", min_value=0.0, value=300.0, step=50.0, format="%.2f")
     valor_inicial = st.number_input("Valor inicial do investimento", min_value=0.0, value=0.0, step=100.0, format="%.2f")
     base = st.selectbox("Base", ["BRL nominal", "BRL real (IPCA)", "USD nominal", "USD real (CPI)"], index=0)
@@ -526,36 +563,45 @@ st.caption("Research & simulações de investimento • Web3 • Dados reais")
 tab_dash, tab_port, tab_met = st.tabs(["📊 Dashboard", "🧺 Carteira", "ℹ️ Metodologia"])
 
 # ============================================================
-# Load + prepare base data once
+# Seleção do período (após sidebar)
 # ============================================================
-try:
-    df_btc = baixar_btc_usd(3650)  # ~10y
-    br_ini = df_btc.index.min().strftime("%d/%m/%Y")
-    br_fim = df_btc.index.max().strftime("%d/%m/%Y")
-    start_iso = df_btc.index.min().strftime("%Y-%m-%d")
-    end_iso = df_btc.index.max().strftime("%Y-%m-%d")
+idx_min = df_m_full.index.min().date()
+idx_max = df_m_full.index.max().date()
 
-    df_usd = baixar_usd_brl(br_ini, br_fim)
-    df_cdi = baixar_cdi(br_ini, br_fim)
+# Ajusta inputs de data (quando modo personalizado)
+if modo_periodo == "Intervalo personalizado":
+    # Se usuário não escolheu, define defaults
+    if data_inicio is None:
+        data_inicio = idx_min
+    if data_fim is None:
+        data_fim = idx_max
 
-    df_all = df_btc.join(df_usd, how="inner").join(df_cdi, how="inner")
-    df_all["BTC_BRL"] = df_all["BTC_USD"] * df_all["USD_BRL"]
-    df_all = df_all[["BTC_USD", "BTC_BRL", "USD_BRL", "CDI"]].dropna()
+    # Normaliza e limita ao intervalo disponível
+    if isinstance(data_inicio, (list, tuple)):
+        data_inicio = data_inicio[0]
+    if isinstance(data_fim, (list, tuple)):
+        data_fim = data_fim[0]
 
-    df_m_full = to_month_end(df_all).dropna()
-    if len(df_m_full) < 24:
-        st.error("Base mensal muito curta. Não há dados suficientes para simular.")
-        st.stop()
+    di = max(min(pd.to_datetime(data_inicio).date(), idx_max), idx_min)
+    df_ = max(min(pd.to_datetime(data_fim).date(), idx_max), idx_min)
 
-    df_macro_full = build_macro(df_m_full, br_ini, br_fim, start_iso, end_iso)
+    if df_ < di:
+        di, df_ = df_, di
 
+    start_ts = pd.Timestamp(di).to_period("M").to_timestamp("M")
+    end_ts = pd.Timestamp(df_).to_period("M").to_timestamp("M")
+
+    df_m = df_m_full.loc[(df_m_full.index >= start_ts) & (df_m_full.index <= end_ts)].copy()
+else:
     meses_plot = min(anos_plot * 12, len(df_m_full))
-    df_m = df_m_full.tail(meses_plot)
-    df_macro = df_macro_full.reindex(df_m.index).ffill().bfill()
+    df_m = df_m_full.tail(meses_plot).copy()
 
-except Exception as e:
-    st.error(f"Erro ao carregar dados: {e}")
-    st.stop()
+# Alinha macro ao período
+df_macro = df_macro_full.reindex(df_m.index).ffill().bfill()
+
+if len(df_m) < 6:
+    st.warning("Período escolhido é muito curto. Selecione um intervalo maior para simulação.")
+
 
 # ============================================================
 # Dashboard
