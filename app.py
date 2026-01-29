@@ -412,10 +412,33 @@ def plot_lines(df: pd.DataFrame, title: str, unit: str, show_halvings: bool, sho
     return fig
 
 def export_excel(sheets: dict[str, pd.DataFrame]) -> bytes:
+    """Exporta múltiplas abas para Excel.
+
+    No Streamlit Cloud, o pacote `openpyxl` pode não estar instalado se não estiver no requirements.txt.
+    Esta função tenta:
+      1) openpyxl
+      2) xlsxwriter
+    Se nenhum estiver disponível, levanta ImportError para a UI tratar com mensagem amigável.
+    """
     buf = io.BytesIO()
-    with pd.ExcelWriter(buf, engine="openpyxl") as writer:
+
+    engine = None
+    try:
+        import openpyxl  # noqa: F401
+        engine = "openpyxl"
+    except Exception:
+        try:
+            import xlsxwriter  # noqa: F401
+            engine = "xlsxwriter"
+        except Exception as e:
+            raise ImportError(
+                "Para exportar Excel, instale 'openpyxl' (recomendado) ou 'xlsxwriter' no requirements.txt."
+            ) from e
+
+    with pd.ExcelWriter(buf, engine=engine) as writer:
         for name, df in sheets.items():
-            df.to_excel(writer, sheet_name=name[:31])
+            df.to_excel(writer, sheet_name=str(name)[:31])
+
     buf.seek(0)
     return buf.read()
 
@@ -556,9 +579,16 @@ with tab_dash:
         st.markdown("##### Exportar dados")
         csv_bytes = dca_df.to_csv().encode("utf-8")
         st.download_button("⬇️ CSV (DCA)", data=csv_bytes, file_name="dca.csv", mime="text/csv")
-
-        xlsx = export_excel({"prices": df_prices, "dca": dca_df, "macro": df_macro})
-        st.download_button("⬇️ Excel (prices+dca+macro)", data=xlsx, file_name="lm_analytics.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        try:
+            xlsx = export_excel({"prices": df_prices, "dca": dca_df, "macro": df_macro})
+            st.download_button(
+                "⬇️ Excel (prices+dca+macro)",
+                data=xlsx,
+                file_name="lm_analytics.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
+        except ImportError:
+            st.info("Exportação Excel desativada: adicione 'openpyxl' ao requirements.txt (ou 'xlsxwriter').")
 
     with c2:
         st.subheader("Resumo & Risco")
@@ -640,8 +670,16 @@ with tab_port:
         pdf_buf.seek(0)
         st.download_button("📄 Exportar gráfico da Carteira (PDF)", data=pdf_buf, file_name="carteira.pdf", mime="application/pdf")
 
-        xlsx = export_excel({"portfolio": df_plot, "prices": df_prices_port, "macro": df_macro})
-        st.download_button("⬇️ Excel (carteira+prices+macro)", data=xlsx, file_name="carteira.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        try:
+            xlsx = export_excel({"portfolio": df_plot, "prices": df_prices_port, "macro": df_macro})
+            st.download_button(
+                "⬇️ Excel (carteira+prices+macro)",
+                data=xlsx,
+                file_name="carteira.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
+        except ImportError:
+            st.info("Exportação Excel desativada: adicione 'openpyxl' ao requirements.txt (ou 'xlsxwriter').")
 
     with colp2:
         st.subheader("Risco (Carteira)")
