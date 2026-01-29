@@ -244,7 +244,7 @@ def build_prices(df_m: pd.DataFrame, df_macro: pd.DataFrame, base: str, include_
 # SIMULATION CORE
 # ============================================================
 
-def simular_dca(precos: pd.Series, aportes: float | pd.Series) -> pd.Series:
+def simular_dca(precos: pd.Series, aportes: float | pd.Series, valor_inicial: float = 0.0) -> pd.Series:
     precos = precos.astype(float)
     if isinstance(aportes, pd.Series):
         ap = aportes.reindex(precos.index).fillna(0.0).astype(float)
@@ -252,18 +252,22 @@ def simular_dca(precos: pd.Series, aportes: float | pd.Series) -> pd.Series:
         ap = pd.Series(float(aportes), index=precos.index, dtype=float)
 
     cotas = 0.0
+    initialized = False
     valores = []
     for dt0, p in precos.items():
+        if (not initialized) and valor_inicial > 0 and p > 0:
+            cotas += float(valor_inicial) / p
+            initialized = True
         a = float(ap.loc[dt0])
         if p > 0 and a > 0:
             cotas += a / p
         valores.append(cotas * p)
     return pd.Series(valores, index=precos.index)
 
-def calc_dca(df_prices: pd.DataFrame, aporte: float | pd.Series) -> pd.DataFrame:
+def calc_dca(df_prices: pd.DataFrame, aporte: float | pd.Series, valor_inicial: float = 0.0) -> pd.DataFrame:
     out = pd.DataFrame(index=df_prices.index)
     for c in df_prices.columns:
-        out[c] = simular_dca(df_prices[c], aporte)
+        out[c] = simular_dca(df_prices[c], aporte, valor_inicial)
     return out
 
 def linha_aportes(index: pd.DatetimeIndex, aporte: float | pd.Series) -> pd.Series:
@@ -459,6 +463,7 @@ with st.sidebar:
     st.header("Parâmetros")
     anos_plot = st.slider("Período do gráfico (anos)", 1, 10, 6, 1)
     aporte = st.number_input("Aporte mensal (base selecionada)", min_value=0.0, value=300.0, step=50.0, format="%.2f")
+    valor_inicial = st.number_input("Valor inicial do investimento", min_value=0.0, value=0.0, step=100.0, format="%.2f")
     base = st.selectbox("Base", ["BRL nominal", "BRL real (IPCA)", "USD nominal", "USD real (CPI)"], index=0)
 
     include_fed = st.checkbox("Mostrar benchmark USD + juros FED", value=True)
@@ -560,8 +565,8 @@ with tab_dash:
 
     df_prices, unit = build_prices(df_m, df_macro, base, include_fed=include_fed)
 
-    dca_df = calc_dca(df_prices, float(aporte))
-    aporte_line = linha_aportes(dca_df.index, float(aporte)) if show_aporte_line else None
+    dca_df = calc_dca(df_prices, float(aporte), float(valor_inicial))
+    aporte_line = (linha_aportes(dca_df.index, float(aporte)) + float(valor_inicial)) if show_aporte_line else None
 
     with c1:
         st.subheader("Curvas de patrimônio (DCA mensal)")
@@ -592,7 +597,7 @@ with tab_dash:
 
     with c2:
         st.subheader("Resumo & Risco")
-        total_ap = float(aporte) * len(dca_df)
+        total_ap = float(aporte) * len(dca_df) + float(valor_inicial)
         st.metric("Total aportado", fmt_money(total_ap, unit))
 
         rf = 0.0
@@ -652,6 +657,11 @@ with tab_port:
     weights = {k: float(v) for k, v in weights.items() if k in df_prices_port.columns}
 
     port_series = portfolio_dca(df_prices_port, float(aporte), weights, rebalance=rebalance)
+    if float(valor_inicial) > 0:
+        # aplica valor inicial no primeiro ponto proporcional aos pesos
+        first_idx = port_series.index[0]
+        port_series.loc[first_idx:] += float(valor_inicial)
+
 
     colp1, colp2 = st.columns([3.2, 1.2], gap="large")
     with colp1:
